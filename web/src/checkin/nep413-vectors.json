@@ -1,0 +1,56 @@
+{
+  "description": "NEP-413 check-in vectors for check_in_signed. Call it with account_id, day, nonce_base64, signature_base64 while current_account_id == recipient, today == day, and the member's checkin_key == key.public_key. 'valid' vectors must pass; 'invalid' vectors must fail with ERR_BAD_SIGNATURE. signed_payload_hex and signed_hash_hex are what the signer actually signed; for 'valid' vectors they equal what the contract must rebuild.",
+  "key": {
+    "source": "RFC 8032 section 7.1, test 1. Public test key: never fund it.",
+    "seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "public_key": "ed25519:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+  },
+  "vectors": [
+    {
+      "name": "check-in signed without a callback URL",
+      "expected": "valid",
+      "account_id": "alice.testnet",
+      "day": 7,
+      "recipient": "lastcall.testnet",
+      "nonce_base64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "signed_callback_url": null,
+      "message": "{\"action\":\"check_in\",\"account_id\":\"alice.testnet\",\"day\":7}",
+      "signed_payload_hex": "9d0100803a0000007b22616374696f6e223a22636865636b5f696e222c226163636f756e745f6964223a22616c6963652e746573746e6574222c22646179223a377d000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f100000006c61737463616c6c2e746573746e657400",
+      "signed_hash_hex": "b11f7bff236cc65264b136e3df529afe524cdc4f4971b4f41b40cec6241bf817",
+      "signature_base64": "Cex/VBrQoPqZhVLdLj8AznqpRi33XO9mCYqNuR7ESGArmzXNXwhqBSEXpJNckL/XctTaSTzBOuJF9Hf4TJY0Dw==",
+      "signature_hex": "09ec7f541ad0a0fa998552dd2e3f00ce7aa9462df75cef66098a8db91ec448602b9b35cd5f086a052117a4935c90bfd772d4da493cc13ae245f477f84c96340f"
+    },
+    {
+      "name": "day 0, implicit account, sandbox contract",
+      "expected": "valid",
+      "account_id": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "day": 0,
+      "recipient": "lastcall.test.near",
+      "nonce_base64": "//////////////////////////////////////////8=",
+      "nonce_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "signed_callback_url": null,
+      "message": "{\"action\":\"check_in\",\"account_id\":\"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a\",\"day\":0}",
+      "signed_payload_hex": "9d0100806d0000007b22616374696f6e223a22636865636b5f696e222c226163636f756e745f6964223a2264373561393830313832623130616237643534626665643363393634303733613065653137326633646161363233323561663032316136386637303735313161222c22646179223a307dffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff120000006c61737463616c6c2e746573742e6e65617200",
+      "signed_hash_hex": "e1060ec384aecf31ad98a8a01e8b594a8101d1dcc1b785356ef2b97234ffb354",
+      "signature_base64": "pIDp1q+FG3NttOXL2BM3/kR4xsmd22ckW9fnj1htUzClvNPNXXSqel6uOP8jpBz0HuVAS0PDYoWa7hXfvX/zCw==",
+      "signature_hex": "a480e9d6af851b736db4e5cbd81337fe4478c6c99ddb67245bd7e78f586d5330a5bcd3cd5d74aa7a5eae38ff23a41cf41ee5404b43c362859aee15dfbd7ff30b"
+    },
+    {
+      "name": "wallet added a callback URL to the payload: the contract rebuilds the payload without it and must reject",
+      "expected": "invalid",
+      "account_id": "alice.testnet",
+      "day": 7,
+      "recipient": "lastcall.testnet",
+      "nonce_base64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "signed_callback_url": "https://lastcall.example/",
+      "message": "{\"action\":\"check_in\",\"account_id\":\"alice.testnet\",\"day\":7}",
+      "signed_payload_hex": "9d0100803a0000007b22616374696f6e223a22636865636b5f696e222c226163636f756e745f6964223a22616c6963652e746573746e6574222c22646179223a377d000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f100000006c61737463616c6c2e746573746e6574011900000068747470733a2f2f6c61737463616c6c2e6578616d706c652f",
+      "signed_hash_hex": "0537a29fca82e6c5836e16b316c846cbc63bd1ca30ba90044911f67e4cf88129",
+      "signature_base64": "ACWh0En2ExEXAUPBe8u//HLVU/Yh0oEoOaJteGtRLs3W/R0uZkn0U8rKeVdwpd5yguy4bQQpaTMr54o6cmwnCw==",
+      "signature_hex": "0025a1d049f61311170143c17bcbbffc72d553f621d2812839a26d786b512ecdd6fd1d2e6649f453caca795770a5de7282ecb86d042969332be78a3a726c270b"
+    }
+  ]
+}

@@ -13,10 +13,11 @@
     "start": "bun run --filter @last-call/web start",
     "biome:check": "biome check .",
     "biome:fix": "biome check --write .",
-    "typecheck": "bun check && bun run --filter @last-call/web typecheck",
+    "typecheck": "bun run --filter @last-call/web typecheck && bun run typecheck:tasks",
     "test": "bun test",
     "check": "bun run biome:check && bun run typecheck && bun run test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "typecheck:tasks": "test ! -f docs/tasks/tasks.ts || bun check docs/tasks/tasks.ts docs/tasks/tasks.test.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",

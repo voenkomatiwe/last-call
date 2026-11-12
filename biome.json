@@ -54,6 +54,25 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["web/src/**", "!web/src/**/*.test.ts", "!web/src/**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "The web app runs under Node through Next.js. Use Web APIs; Bun globals exist only in tests and scripts."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

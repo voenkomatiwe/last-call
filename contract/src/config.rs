@@ -22,9 +22,10 @@ pub const PICK_HERO_GAS: Gas = Gas::from_tgas(10);
 pub const GAS_RESERVE: Gas = Gas::from_tgas(5);
 /// Upper bound of the storage one `join` adds: member record with a 64-byte `AccountId` and a
 /// `checkin_key`, its `IterableMap` index entry and a new `maturing` entry (S3, S4).
-/// TODO(C6): замерить. Rough estimate ~400 bytes; 500 keeps `member_storage_deposit = 10^22`
-/// (1000 bytes at 10^19 yocto/byte) valid.
-pub const MAX_MEMBER_BYTES: u64 = 500;
+/// Measured by C6 (`member::max_member_bytes_measured`): 354 bytes at join (members value 191 +
+/// index 114 + maturing 49), 358 after the first check-in (`last_checkin` becomes `Some`).
+/// 400 leaves headroom; `member_storage_deposit = 10^22` (1000 bytes at 10^19 yocto/byte) passes.
+pub const MAX_MEMBER_BYTES: u64 = 400;
 /// Upper bound of `closers_k` (S3).
 pub const MAX_CLOSERS_K: u32 = 16;
 /// Lower bound of `day_length_s` (S3).

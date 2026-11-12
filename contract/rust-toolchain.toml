@@ -1,0 +1,7 @@
+[toolchain]
+# Same rustc as the reproducible-build image (sourcescan/cargo-near:0.23.0-rust-1.99.1 in
+# Cargo.toml). The cargo-near 0.23.0 template pins 1.95.0; pinned to the image version instead so
+# that local builds and tests use the release compiler.
+channel = "1.99.1"
+components = ["rustfmt", "clippy", "rust-analyzer"]
+targets = ["wasm32-unknown-unknown"]

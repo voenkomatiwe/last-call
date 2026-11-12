@@ -21,11 +21,11 @@ function activeGame(members: number, options: ConstructorParameters<typeof Game>
 }
 
 /** The plan's hero hash, written independently: sha256(seed ‖ day u32 LE ‖ "lastcall"), u64 LE. */
-function referenceHeroIndex(seed: Uint8Array, day: number, tickets: number): number {
+function referenceHeroIndex(seed: Uint8Array, day: number, count: number): number {
   const dayBytes = Buffer.alloc(4);
   dayBytes.writeUInt32LE(day);
   const digest = createHash("sha256").update(seed).update(dayBytes).update("lastcall").digest();
-  return Number(digest.readBigUInt64LE(0) % BigInt(tickets));
+  return Number(digest.readBigUInt64LE(0) % BigInt(count));
 }
 
 describe("success day", () => {
@@ -148,9 +148,16 @@ describe("hero", () => {
     for (let index = 0; index < 500; index += 1) {
       const seed = Uint8Array.from({ length: 32 }, () => next() % 256);
       const day = next() % 100_000;
-      const tickets = 1 + (next() % 600);
-      expect(heroIndex(seed, day, tickets)).toBe(referenceHeroIndex(seed, day, tickets));
+      const count = 1 + (next() % 16);
+      expect(heroIndex(seed, day, count)).toBe(referenceHeroIndex(seed, day, count));
     }
+  });
+
+  test("heroIndex reproduces the contract's own vectors (hero.rs t14_different_days_pick_different_heroes)", () => {
+    // SEED = 32 bytes of 0x2a, five closers: day 10 → index 4, day 4 → index 2.
+    const seed = new Uint8Array(32).fill(0x2a);
+    expect(heroIndex(seed, 10, 5)).toBe(4);
+    expect(heroIndex(seed, 4, 5)).toBe(2);
   });
 
   test("pick_hero pays the reference hero and counts it", () => {
@@ -159,10 +166,10 @@ describe("hero", () => {
     game.goToDay(2);
     game.settle();
     const seed = new Uint8Array(32).fill(9);
-    // goal 3 and check-ins in account order: ticket i + 1 belongs to accounts[i].
-    const tickets = game.sim.state.pending_hero?.tickets ?? 0;
-    expect(tickets).toBe(3);
-    const hero = accounts[referenceHeroIndex(seed, 1, tickets)] as string;
+    // goal 3, one check-in per block in account order: the closers are accounts 0..2.
+    const closers = game.sim.state.pending_heroes[0]?.closers ?? [];
+    expect(closers).toEqual(accounts.slice(0, 3));
+    const hero = closers[referenceHeroIndex(seed, 1, closers.length)] as string;
 
     game.runPickHero(seed);
     expect(game.sim.getHistory(1)[0]?.hero).toBe(hero);

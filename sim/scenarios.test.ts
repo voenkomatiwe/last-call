@@ -26,13 +26,16 @@ describe("scenarios", () => {
     expect(scenarioCsv(runScenario(spec("base"), { days: 20, seed: 8 }))).not.toBe(first);
   });
 
-  test("snipers get one ticket per seat that checked in before the goal, whatever their timing", () => {
-    for (const name of ["sniper-blocks", "sniper-batch"]) {
-      const sniper = runScenario(spec(name), { days: 20 }).sniper;
-      // Five seats: at most five tickets a successful day, and more than one (the old window allowed one).
-      expect(sniper?.sniperTickets ?? 0).toBeLessThanOrEqual(5 * (sniper?.successDays ?? 0));
-      expect(sniper?.sniperTickets ?? 0).toBeGreaterThan(sniper?.successDays ?? 0);
-    }
+  test("closers reward timing: block snipers take every closer seat, a one-block batch only one (R5)", () => {
+    const blocks = runScenario(spec("sniper-blocks"), { days: 20 }).sniper;
+    const batch = runScenario(spec("sniper-batch"), { days: 20 }).sniper;
+    if (!blocks || !batch) throw new Error("no sniper stats");
+    // Five snipers in five blocks fill the whole window of K = 5 on every successful day...
+    expect(blocks.sniperCloserSeats).toBe(blocks.totalCloserSeats);
+    expect(blocks.sniperJackpots).toBe(blocks.successDays);
+    // ...while an atomic batch is one block: one candidate per successful day.
+    expect(batch.sniperCloserSeats).toBe(batch.successDays);
+    expect(batch.sniperJackpots).toBeLessThan(batch.successDays);
   });
 
   test("griefers get kicked and come back", () => {

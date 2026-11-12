@@ -1,5 +1,6 @@
 // A line-by-line TypeScript model of the Last Call contract's game logic.
-// Source of every formula: plan section 4.4; methods and errors: 4.5 and 4.7; validation: 4.2.
+// Reference: the merged contract (`contract/src`, `contract/API.md`); plan decision "12.11 (вечер)".
+// Hero candidates are the closers (R5), not tickets; pending hero draws are a list (R10).
 // Field names follow the Rust state (snake_case) so traces and views map one to one.
 //
 // Deliberately not modelled: NEAR storage deposits and gas, events, the NEP-413 signature check
@@ -9,6 +10,12 @@ export const B = 10_000n;
 export const AUTO_SETTLE_CAP = 50;
 export const MAX_SETTLE_DAYS = 500;
 export const HISTORY_LEN = 64;
+/** Bounds checked by `new` (`contract/src/config.rs`). */
+export const MAX_CLOSERS_K = 16;
+export const MIN_DAY_LENGTH_S = 10;
+export const MAX_DAY_LENGTH_S = 31_536_000;
+export const MAX_JACKPOT_MULT = 1_000;
+export const MAX_INACTIVE_DAYS = 10_000;
 export const U128_MAX = (1n << 128n) - 1n;
 const NS_PER_S = 1_000_000_000n;
 const E8 = 100_000_000n;
@@ -19,6 +26,8 @@ export interface Config {
   readonly inactive_days: number;
   readonly goal_bps: number;
   readonly min_goal: number;
+  /** Size of the closers list (hero candidates). */
+  readonly closers_k: number;
   readonly jackpot_mult: number;
   readonly emit_bps: number;
   readonly streak_step_bps: number;
@@ -28,6 +37,8 @@ export interface Config {
   readonly join_stake: bigint;
   readonly member_storage_deposit: bigint;
   readonly faucet_amount: bigint;
+  /** Share of a kicked member's fee paid to a registered kicker. */
+  readonly kick_bounty_bps: number;
 }
 
 export interface NewArgs {
@@ -84,20 +95,16 @@ export interface OpenDay {
   count: number;
   checked_stake: bigint;
   forfeited: number;
+  /** Hero candidates, oldest first, at most `closers_k` (R5). */
+  closers: string[];
+  /** Block height of the last candidate: one candidate per block. */
+  closer_height: number;
 }
 
 export interface PendingHero {
   day: number;
-  /** The day's goal: tickets 1..goal were handed out. */
-  tickets: number;
+  closers: string[];
   jackpot: bigint;
-}
-
-/** Holders of one ticket number on the last two days that wrote it (plan section 4.4). */
-export interface TicketSlot {
-  day: number;
-  holder: string;
-  prev: { day: number; holder: string } | null;
 }
 
 /** A promise the contract schedules on itself. The harness runs it in a later block. */
@@ -110,7 +117,7 @@ export interface CheckInResult {
   day: number;
   n: number;
   goal: number;
-  ticket: boolean;
+  in_closers: boolean;
 }
 
 export interface State {
@@ -138,9 +145,8 @@ export interface State {
   active_count: number;
   active_stake: bigint;
   open: OpenDay;
-  pending_hero: PendingHero | null;
-  /** Ticket number - 1 → holders; as many slots as the largest goal ever. */
-  tickets: Map<number, TicketSlot>;
+  /** Hero draws scheduled and not run yet (R10); `retry_pick_hero` reschedules one. */
+  pending_heroes: PendingHero[];
   maturing: Map<number, number>;
   rewards: Map<number, { per_share: bigint; refs: number }>;
   failed_days: Set<number>;
@@ -191,20 +197,35 @@ function mul(a: bigint, b: bigint, what: string): bigint {
 
 const minBig = (a: bigint, b: bigint) => (a < b ? a : b);
 
-/** `new` validation of plan section 4.2, except the storage-deposit bound (storage is not modelled). */
+/** `new` validation of `contract/src/config.rs` `validate`, except the storage-deposit bound. */
 export function validateNewArgs(args: NewArgs): void {
   const c = args.config;
-  const bps = [c.goal_bps, c.emit_bps, c.streak_step_bps, c.burn_bps, c.slash_bps, args.pot_bps, args.faucet_bps];
+  const bps = [
+    c.goal_bps,
+    c.emit_bps,
+    c.streak_step_bps,
+    c.burn_bps,
+    c.slash_bps,
+    c.kick_bounty_bps,
+    args.pot_bps,
+    args.faucet_bps,
+  ];
   const ok =
     bps.every((value) => Number.isInteger(value) && value >= 0 && value <= 10_000) &&
     args.pot_bps + args.faucet_bps <= 10_000 &&
     c.warmup_days >= 1 &&
     c.inactive_days >= 1 &&
+    c.inactive_days <= MAX_INACTIVE_DAYS &&
     c.min_goal >= 1 &&
-    c.day_length_s >= 10 &&
+    c.closers_k >= 1 &&
+    c.closers_k <= MAX_CLOSERS_K &&
+    c.day_length_s >= MIN_DAY_LENGTH_S &&
+    c.day_length_s <= MAX_DAY_LENGTH_S &&
+    c.jackpot_mult <= MAX_JACKPOT_MULT &&
     c.join_stake > 0n &&
     // Guarantees budget <= pot (I8): emit × (B + cap × step) <= 10^8, computed in u128.
     BigInt(c.emit_bps) * (B + BigInt(c.streak_cap) * BigInt(c.streak_step_bps)) <= E8 &&
+    args.total_supply > 0n &&
     args.total_supply <= U128_MAX / E8;
   if (!ok) throw new ContractError("ERR_BAD_CONFIG");
 }
@@ -248,8 +269,7 @@ export class LastCallSim {
       active_count: 0,
       active_stake: 0n,
       open: LastCallSim.emptyOpenDay(0, 0, 0, 0n),
-      pending_hero: null,
-      tickets: new Map(),
+      pending_heroes: [],
       maturing: new Map(),
       rewards: new Map(),
       failed_days: new Set(),
@@ -274,6 +294,8 @@ export class LastCallSim {
       count: 0,
       checked_stake: 0n,
       forfeited: 0,
+      closers: [],
+      closer_height: 0,
     };
   }
 
@@ -418,21 +440,16 @@ export class LastCallSim {
         s.rewards.set(day, { per_share: perShare, refs: shares });
       }
       const jackpot = mul(perShare, BigInt(c.jackpot_mult), "jackpot");
-      if (jackpot > 0n) {
-        const expired = s.pending_hero;
-        if (expired) {
-          // The previous pick_hero never ran: its jackpot goes back to the pot (jackpot_expired).
-          s.jackpot_pending = sub(s.jackpot_pending, expired.jackpot, "jackpot_pending (expired)");
-          s.pot = add(s.pot, expired.jackpot, "pot (expired jackpot)");
-        }
+      // R10: drawn in a separate receipt; without closers the jackpot stays in the pot.
+      if (jackpot > 0n && open.closers.length > 0) {
         s.pot = sub(s.pot, jackpot, "pot (jackpot)");
         s.jackpot_pending = add(s.jackpot_pending, jackpot, "jackpot_pending");
-        s.pending_hero = { day, tickets: open.goal, jackpot };
+        s.pending_heroes.push({ day, closers: [...open.closers], jackpot });
+        summary.jackpot = jackpot;
         heroScheduled = true;
       }
       summary.per_share = perShare;
-      summary.jackpot = jackpot;
-    } else if (open.goal > 0) {
+    } else if (open.goal > 0 && s.active_count > 0) {
       summary.outcome = "Fail";
       s.streak = 0;
       const potBurn = (s.pot * BigInt(c.burn_bps)) / B;
@@ -538,7 +555,7 @@ export class LastCallSim {
   checkIn(env: Env): CheckInResult {
     return this.atomic(() => {
       const today = this.autoSettle(env);
-      return this.checkInMember(env.signer, today);
+      return this.checkInMember(env.signer, today, env.height);
     });
   }
 
@@ -549,11 +566,11 @@ export class LastCallSim {
       const member = this.member(accountId);
       if (member.checkin_key === null) throw new ContractError("ERR_NO_CHECKIN_KEY");
       if (day !== today) throw new ContractError("ERR_BAD_DAY");
-      return this.checkInMember(accountId, today);
+      return this.checkInMember(accountId, today, env.height);
     });
   }
 
-  private checkInMember(accountId: string, today: number): CheckInResult {
+  private checkInMember(accountId: string, today: number, height: number): CheckInResult {
     const s = this.s;
     const open = s.open;
     const member = this.member(accountId);
@@ -568,19 +585,15 @@ export class LastCallSim {
     member.last_checkin = today;
     member.checkins += 1;
 
-    // Every check-in numbered up to the goal gets a ticket, whatever the block (decision 12.11).
-    let ticket = false;
-    if (open.goal > 0 && open.count <= open.goal) {
-      const index = open.count - 1;
-      const slot = s.tickets.get(index);
-      s.tickets.set(index, {
-        day: today,
-        holder: accountId,
-        prev: slot ? { day: slot.day, holder: slot.holder } : null,
-      });
-      ticket = true;
+    // R5: a candidate only within the goal and only the first check-in of a block; the window
+    // keeps the last `closers_k` candidates.
+    const inClosers = open.goal > 0 && open.count <= open.goal && height !== open.closer_height;
+    if (inClosers) {
+      open.closers.push(accountId);
+      if (open.closers.length > s.config.closers_k) open.closers.shift();
+      open.closer_height = height;
     }
-    return { day: today, n: open.count, goal: open.goal, ticket };
+    return { day: today, n: open.count, goal: open.goal, in_closers: inClosers };
   }
 
   setCheckinKey(env: Env, key: string | null): void {
@@ -616,10 +629,11 @@ export class LastCallSim {
     });
   }
 
+  /** Returns `stake − fee`, as the contract does (claimable is paid in the same transfer). */
   leave(env: Env): bigint {
     return this.atomic(() => {
       const today = this.autoSettle(env);
-      return this.exit(env.signer, today);
+      return this.exit(env.signer, today, "leave", env.signer).returned;
     });
   }
 
@@ -631,23 +645,23 @@ export class LastCallSim {
       if (!(member.activation_day <= today && today >= since + this.s.config.inactive_days)) {
         throw new ContractError("ERR_NOT_INACTIVE");
       }
-      return this.exit(accountId, today);
+      return this.exit(accountId, today, "kick", env.signer).bounty;
     });
   }
 
-  /**
-   * The shared part of `leave` and `kick`. Returns what reached the member: claimable plus the
-   * stake minus the fee. (The plan names the return value only loosely; see the task evidence.)
-   */
-  private exit(accountId: string, today: number): bigint {
+  /** The shared part of `leave` and `kick` (`contract/src/member.rs` `exit`). */
+  private exit(
+    accountId: string,
+    today: number,
+    kind: "leave" | "kick",
+    caller: string
+  ): { returned: bigint; burned: bigint; bounty: bigint } {
     const s = this.s;
     const c = s.config;
     const member = this.member(accountId);
     this.resolve(member, today);
 
     const claimable = member.claimable;
-    s.reserved = sub(s.reserved, claimable, "reserved (exit)");
-    this.transfer(s.contract_id, accountId, claimable);
 
     let fee = 0n;
     if (member.activation_day <= today) {
@@ -672,9 +686,15 @@ export class LastCallSim {
     }
 
     s.stake_pool = sub(s.stake_pool, member.stake, "stake_pool (exit)");
-    this.burn(fee);
+    // R12: the bounty only to a caller registered in the token; otherwise all of the fee burns.
+    const bounty = kind === "kick" && this.isRegistered(caller) ? (fee * BigInt(c.kick_bounty_bps)) / B : 0n;
+    const burned = fee - bounty;
+    this.burn(burned);
+    this.transfer(s.contract_id, caller, bounty);
+
+    s.reserved = sub(s.reserved, claimable, "reserved (exit)");
     const returned = member.stake - fee;
-    this.transfer(s.contract_id, accountId, returned);
+    this.transfer(s.contract_id, accountId, claimable + returned);
 
     s.members_total -= 1;
     s.members.delete(accountId);
@@ -686,15 +706,7 @@ export class LastCallSim {
       s.open.active_stake = 0n;
       s.open.checked_stake = 0n;
     }
-    return claimable + returned;
-  }
-
-  /** Holder of ticket `index + 1` on `day`: the slot's current or previous generation. */
-  private ticketHolder(index: number, day: number): string | null {
-    const slot = this.s.tickets.get(index);
-    if (slot?.day === day) return slot.holder;
-    if (slot?.prev?.day === day) return slot.prev.holder;
-    return null;
+    return { returned, burned, bounty };
   }
 
   /** `#[private]`: only the contract's own promise may call it, in a later block. */
@@ -702,18 +714,21 @@ export class LastCallSim {
     this.atomic(() => {
       const s = this.s;
       if (env.signer !== s.contract_id) throw new ContractError("ERR_PRIVATE");
-      const pending = s.pending_hero;
-      if (!pending || pending.day !== day) return;
+      const index = s.pending_heroes.findIndex((entry) => entry.day === day);
+      // Already drawn (a retry raced the original promise) or never pending: no-op.
+      if (index === -1) return;
       if (env.seed?.length !== 32) throw new ArithmeticError("pick_hero needs a 32-byte seed");
-      s.pending_hero = null;
+      const [pending] = s.pending_heroes.splice(index, 1);
+      if (!pending) throw new ArithmeticError("pending hero vanished");
 
-      if (pending.tickets < 1) throw new ArithmeticError("a successful day has no tickets");
-      const hero = this.ticketHolder(heroIndex(env.seed, day, pending.tickets), day);
       s.jackpot_pending = sub(s.jackpot_pending, pending.jackpot, "jackpot_pending (pick_hero)");
-      if (hero === null) {
-        // The slot was rewritten by two newer days: nobody can be paid (jackpot_expired).
-        s.pot = add(s.pot, pending.jackpot, "pot (lost ticket)");
-      } else if (this.isRegistered(hero)) {
+      if (pending.closers.length === 0) {
+        // Guard only: settle never creates such a record.
+        s.pot = add(s.pot, pending.jackpot, "pot (no closers)");
+        return;
+      }
+      const hero = pending.closers[heroIndex(env.seed, day, pending.closers.length)] as string;
+      if (this.isRegistered(hero)) {
         this.transfer(s.contract_id, hero, pending.jackpot);
         s.total_jackpots = add(s.total_jackpots, pending.jackpot, "total_jackpots");
         const member = s.members.get(hero);
@@ -722,7 +737,15 @@ export class LastCallSim {
         s.pot = add(s.pot, pending.jackpot, "pot (unregistered hero)");
       }
       const summary = s.history.find((entry) => entry.day === day);
-      if (summary && hero !== null) summary.hero = hero;
+      if (summary) summary.hero = hero;
+    });
+  }
+
+  /** Anyone: reschedules the draw of a pending day (a draw whose receipt ran out of gas). */
+  retryPickHero(_env: Env, day: number): void {
+    this.atomic(() => {
+      if (!this.s.pending_heroes.some((entry) => entry.day === day)) throw new ContractError("ERR_NO_PENDING_HERO");
+      this.s.scheduled.push({ method: "pick_hero", day });
     });
   }
 
@@ -792,9 +815,11 @@ export class LastCallSim {
       stake_pool: s.stake_pool,
       faucet_left: s.faucet_left,
       jackpot_pending: s.jackpot_pending,
+      pending_hero_days: s.pending_heroes.map((entry) => entry.day),
       streak: s.streak,
       longest_streak: s.longest_streak,
       active_count: s.active_count,
+      active_stake: s.active_stake,
       members_total: s.members_total,
       total_supply: s.total_supply,
       total_burned: s.total_burned,
@@ -812,7 +837,7 @@ export class LastCallSim {
       count: open.count,
       active: open.active,
       forfeited: open.forfeited,
-      tickets: open.goal > 0 ? Math.min(open.count, open.goal) : 0,
+      closers: [...open.closers],
       is_idle: open.goal === 0,
       stale: open.day < this.today(env),
     };
@@ -833,13 +858,19 @@ export class LastCallSim {
     const today = this.today(env);
     const preview = this.previewResolve(member, this.s.open.day);
     const since = member.last_checkin === null ? member.activation_day : member.last_checkin + 1;
+    const isActive = member.activation_day <= today;
+    const checkedInToday = member.last_checkin === today;
+    const streakAlive = member.last_checkin !== null && member.last_checkin >= Math.max(0, today - 1);
     return {
       ...member,
       effective_stake: preview.stake,
       pending_claimable: preview.claimable,
-      can_check_in_today: member.activation_day <= today && member.last_checkin !== today,
-      checked_in_today: member.last_checkin === today,
-      kickable_from_day: since + this.s.config.inactive_days,
+      is_active: isActive,
+      can_check_in_today: isActive && !checkedInToday,
+      checked_in_today: checkedInToday,
+      // `null` during warm-up (`contract/src/views.rs` `kickable_from_day`).
+      kickable_from_day: isActive ? since + this.s.config.inactive_days : null,
+      current_personal_streak: streakAlive ? member.personal_streak : 0,
     };
   }
 
@@ -866,7 +897,7 @@ export class LastCallSim {
 }
 
 /** `sha256(seed ‖ day as u32 little-endian ‖ "lastcall")`, first 8 bytes as u64 little-endian, mod n. */
-export function heroIndex(seed: Uint8Array, day: number, tickets: number): number {
+export function heroIndex(seed: Uint8Array, day: number, count: number): number {
   const dayBytes = new Uint8Array(4);
   new DataView(dayBytes.buffer).setUint32(0, day, true);
   const hasher = new Bun.CryptoHasher("sha256");
@@ -875,5 +906,5 @@ export function heroIndex(seed: Uint8Array, day: number, tickets: number): numbe
   hasher.update(new TextEncoder().encode("lastcall"));
   const digest = new Uint8Array(hasher.digest().buffer);
   const value = new DataView(digest.buffer, digest.byteOffset, 8).getBigUint64(0, true);
-  return Number(value % BigInt(tickets));
+  return Number(value % BigInt(count));
 }

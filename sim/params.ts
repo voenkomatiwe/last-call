@@ -2,24 +2,17 @@ import paramsFile from "../config/params.json";
 import { type Config, type NewArgs, validateNewArgs } from "./engine";
 
 // `config/params.json` is the single source of parameters (plan section 3): the simulation, the
-// demo, the deploy script, and the Rust tests all read it. Amounts are strings there (u128 in JSON).
+// demo, the deploy script, and the Rust tests all read it. Token metadata is a `new` argument,
+// not part of this file. Amounts are strings there (u128 in JSON).
 
 export const NETWORKS = ["mainnet", "testnet", "demo"] as const;
 export type ParamsNetwork = (typeof NETWORKS)[number];
-
-export interface FtMetadata {
-  readonly spec: string;
-  readonly name: string;
-  readonly symbol: string;
-  readonly decimals: number;
-}
 
 export interface ParamsSet {
   readonly config: Config;
   readonly total_supply: bigint;
   readonly pot_bps: number;
   readonly faucet_bps: number;
-  readonly metadata: FtMetadata;
 }
 
 const AMOUNT_PATTERN = /^(0|[1-9]\d*)$/;
@@ -44,12 +37,14 @@ const INTEGER_FIELDS = [
   "inactive_days",
   "goal_bps",
   "min_goal",
+  "closers_k",
   "jackpot_mult",
   "emit_bps",
   "streak_step_bps",
   "streak_cap",
   "burn_bps",
   "slash_bps",
+  "kick_bounty_bps",
 ] as const;
 
 /** Parses one set and checks it with the rules of `new` (plan section 4.2). */
@@ -69,28 +64,11 @@ export function parseParamsSet(raw: unknown, name: string): ParamsSet {
     faucet_amount: amount(rawConfig.faucet_amount, `${name}.config.faucet_amount`),
   };
 
-  const metadata = set.metadata as Record<string, unknown> | undefined;
-  if (
-    typeof metadata !== "object" ||
-    metadata === null ||
-    typeof metadata.spec !== "string" ||
-    typeof metadata.name !== "string" ||
-    typeof metadata.symbol !== "string"
-  ) {
-    throw new Error(`${name}.metadata must have spec, name, and symbol`);
-  }
-
   const params: ParamsSet = {
     config,
     total_supply: amount(set.total_supply, `${name}.total_supply`),
     pot_bps: integer(set.pot_bps, `${name}.pot_bps`),
     faucet_bps: integer(set.faucet_bps, `${name}.faucet_bps`),
-    metadata: {
-      spec: metadata.spec,
-      name: metadata.name,
-      symbol: metadata.symbol,
-      decimals: integer(metadata.decimals, `${name}.metadata.decimals`),
-    },
   };
   validateNewArgs(newArgs(params, "validation.placeholder"));
   return params;

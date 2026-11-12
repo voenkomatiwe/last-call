@@ -37,24 +37,18 @@ export function checkInvariants(sim: LastCallSim): string[] {
   const claimable = members.reduce((sum, entry) => sum + entry.claimable, 0n);
   if (claimable > s.reserved) fail(`I4: pending claimable ${claimable} > reserved ${s.reserved}`);
 
-  // I6: today's tickets are exactly numbers 1..min(count, goal), held by distinct members who
-  // checked in today (or who left after checking in, whose tickets stay in the draw).
-  const issued = s.open.goal > 0 ? Math.min(s.open.count, s.open.goal) : 0;
-  const holders = new Set<string>();
-  for (const [index, slot] of s.tickets) {
-    if (slot.day !== s.open.day) continue;
-    if (index >= issued) fail(`I6: ticket ${index + 1} written today beyond min(count, goal) = ${issued}`);
-    if (holders.has(slot.holder)) fail(`I6: ${slot.holder} holds two tickets today`);
-    holders.add(slot.holder);
-    const member = s.members.get(slot.holder);
-    // A holder who left and rejoined today has a fresh record (join_day today, no check-in yet).
+  // I6 (R5): today's closers are at most closers_k distinct members, no more than the check-ins up
+  // to the goal, each of whom checked in today (or left after checking in; a rejoin starts fresh).
+  const closers = s.open.closers;
+  const withinGoal = s.open.goal > 0 ? Math.min(s.open.count, s.open.goal) : 0;
+  if (closers.length > s.config.closers_k) fail(`I6: ${closers.length} closers > closers_k ${s.config.closers_k}`);
+  if (closers.length > withinGoal) fail(`I6: ${closers.length} closers > check-ins within the goal ${withinGoal}`);
+  if (new Set(closers).size !== closers.length) fail("I6: a member is a closer twice");
+  for (const closer of closers) {
+    const member = s.members.get(closer);
     if (member && member.last_checkin !== s.open.day && member.join_day !== s.open.day) {
-      fail(`I6: ${slot.holder} holds a ticket without checking in`);
+      fail(`I6: ${closer} is a closer without checking in today`);
     }
-  }
-  if (holders.size !== issued) fail(`I6: ${holders.size} tickets today, expected ${issued}`);
-  if (s.tickets.size > 0 && Math.max(...s.tickets.keys()) >= Math.max(s.tickets.size, 1)) {
-    fail("I6: ticket slots are not contiguous from 0");
   }
 
   // I8: no reward record with a zero share.
@@ -75,9 +69,12 @@ export function checkInvariants(sim: LastCallSim): string[] {
   if (s.active_count !== active) fail(`I11: active_count ${s.active_count} != active members ${active}`);
   if (s.members_total !== s.members.size) fail(`I11: members_total ${s.members_total} != ${s.members.size}`);
 
-  // I12: the pending jackpot is exactly the pending draw's.
-  const pendingJackpot = s.pending_hero?.jackpot ?? 0n;
-  if (s.jackpot_pending !== pendingJackpot) fail(`I12: jackpot_pending ${s.jackpot_pending} != ${pendingJackpot}`);
+  // I13: the pending jackpot is exactly the sum of the pending draws', each with candidates.
+  const pendingJackpot = s.pending_heroes.reduce((sum, entry) => sum + entry.jackpot, 0n);
+  if (s.jackpot_pending !== pendingJackpot) fail(`I13: jackpot_pending ${s.jackpot_pending} != ${pendingJackpot}`);
+  for (const entry of s.pending_heroes) {
+    if (entry.closers.length === 0) fail(`I13: pending draw of day ${entry.day} has no closers`);
+  }
 
   return violations;
 }

@@ -68,7 +68,7 @@ function scenarioSection(result: ScenarioResult, base: ScenarioResult | undefine
     const allAccounts = result.profiles.reduce((sum, row) => sum + row.accounts, 0);
     lines.push(
       "",
-      `Snipers held ${s.sniperTickets} of ${s.totalTickets} tickets on ${s.successDays} successful days (${percent(s.sniperTickets, s.totalTickets)}) and won ${s.sniperJackpots} of ${s.successDays} jackpots (${percent(s.sniperJackpots, s.successDays)}). They are ${percent(sniperAccounts, allAccounts)} of the accounts.`
+      `Snipers held ${s.sniperCloserSeats} of ${s.totalCloserSeats} closer seats on ${s.successDays} successful days (${percent(s.sniperCloserSeats, s.totalCloserSeats)}) and won ${s.sniperJackpots} of ${s.successDays} jackpots (${percent(s.sniperJackpots, s.successDays)}). They are ${percent(sniperAccounts, allAccounts)} of the accounts.`
     );
   }
 

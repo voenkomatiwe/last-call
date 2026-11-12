@@ -81,17 +81,17 @@ export interface ProfileRow {
 export interface SniperStats {
   /** Days that ended in success. */
   successDays: number;
-  /** Tickets held by snipers on successful days, summed. */
-  sniperTickets: number;
-  /** Tickets of all successful days, summed (the goal of each). */
-  totalTickets: number;
+  /** Closer seats (hero candidates) held by snipers on successful days, summed. */
+  sniperCloserSeats: number;
+  /** Closer seats of all successful days, summed (at most closers_k each). */
+  totalCloserSeats: number;
   /** Jackpots the snipers won. */
   sniperJackpots: number;
 }
 
 /**
- * The snipers keep the strategy that beat the old "closing five" (plan before decision 12.11):
- * fire once count reaches goal − 5, back to back. With tickets their timing no longer matters.
+ * The snipers' strategy against the closers (R5, kept by the contract): wait until count reaches
+ * goal − 5, then fire back to back, each in its own block (or, for `sniper-batch`, in one block).
  */
 const SNIPER_WINDOW = 5;
 
@@ -169,15 +169,15 @@ export function runScenario(spec: ScenarioSpec, options: { seed?: number; days?:
     return member !== undefined && member.activation_day <= day && member.last_checkin !== day;
   };
   const checkIn = (player: Player, sameBlock = false) => {
-    const result = call<{ ticket: boolean }>(player.id, (sim, env) => sim.checkIn(env), { sameBlock });
+    const result = call<{ in_closers: boolean }>(player.id, (sim, env) => sim.checkIn(env), { sameBlock });
     if (result) player.checkIns += 1;
     return result;
   };
 
   const sniperStats: SniperStats = {
     successDays: 0,
-    sniperTickets: 0,
-    totalTickets: 0,
+    sniperCloserSeats: 0,
+    totalCloserSeats: 0,
     sniperJackpots: 0,
   };
   const snapshots = new Map<number, { total_supply: bigint; streak: number }>();
@@ -185,12 +185,9 @@ export function runScenario(spec: ScenarioSpec, options: { seed?: number; days?:
     const s = game.sim.state;
     snapshots.set(day, { total_supply: s.total_supply, streak: s.streak });
   };
-  const ticketsAtClose = new Map<number, string[]>();
-  /** Holders of the open day's tickets, read before the settle that closes it. */
-  const ticketHolders = () => {
-    const open = game.sim.state.open.day;
-    return [...game.sim.state.tickets.values()].filter((slot) => slot.day === open).map((slot) => slot.holder);
-  };
+  const closersAtClose = new Map<number, string[]>();
+  /** The open day's closers, read before the settle that closes it. */
+  const openClosers = () => [...game.sim.state.open.closers];
 
   // Day 0: everyone is funded and joins; the first active day is warmup_days later.
   for (const player of players) {
@@ -201,7 +198,7 @@ export function runScenario(spec: ScenarioSpec, options: { seed?: number; days?:
   for (let day = 0; day < days; day += 1) {
     if (day > 0) {
       game.goToDay(day, 0.01);
-      ticketsAtClose.set(day - 1, ticketHolders());
+      closersAtClose.set(day - 1, openClosers());
       game.settle();
       snapshot(day - 1);
 
@@ -257,7 +254,7 @@ export function runScenario(spec: ScenarioSpec, options: { seed?: number; days?:
   }
 
   game.goToDay(days, 0.01);
-  ticketsAtClose.set(days - 1, ticketHolders());
+  closersAtClose.set(days - 1, openClosers());
   game.settle();
   snapshot(days - 1);
 
@@ -272,9 +269,9 @@ export function runScenario(spec: ScenarioSpec, options: { seed?: number; days?:
     if (summary.hero) jackpotsByPlayer.set(summary.hero, (jackpotsByPlayer.get(summary.hero) ?? 0) + 1);
     if (summary.outcome === "Success") {
       sniperStats.successDays += 1;
-      const holders = ticketsAtClose.get(summary.day) ?? [];
-      sniperStats.totalTickets += holders.length;
-      sniperStats.sniperTickets += holders.filter((id) => sniperIds.has(id)).length;
+      const closers = closersAtClose.get(summary.day) ?? [];
+      sniperStats.totalCloserSeats += closers.length;
+      sniperStats.sniperCloserSeats += closers.filter((id) => sniperIds.has(id)).length;
       if (summary.hero && sniperIds.has(summary.hero)) sniperStats.sniperJackpots += 1;
     }
   }

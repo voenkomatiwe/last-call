@@ -172,92 +172,66 @@ describe("day outcomes (items 5–9)", () => {
   });
 });
 
-/** Holders of today's tickets, by ticket number. */
-function todaysTicketHolders(game: Game): string[] {
-  const day = game.sim.state.open.day;
-  return [...game.sim.state.tickets.entries()]
-    .filter(([, slot]) => slot.day === day)
-    .sort(([a], [b]) => a - b)
-    .map(([, slot]) => slot.holder);
-}
-
-/** A seed whose draw over `tickets` tickets on `day` lands on ticket `index + 1`. */
-function seedFor(day: number, tickets: number, index: number): Uint8Array {
+/** A seed whose draw over `count` candidates on `day` lands on index `index`. */
+function seedFor(day: number, count: number, index: number): Uint8Array {
   for (let value = 0; value < 256; value += 1) {
     const seed = new Uint8Array(32).fill(value);
-    if (heroIndex(seed, day, tickets) === index) return seed;
+    if (heroIndex(seed, day, count) === index) return seed;
   }
   throw new Error("no seed found");
 }
 
-describe("tickets (items 11–13, decision 12.11)", () => {
-  test("every check-in numbered up to the goal gets a ticket; later ones do not", () => {
-    const { game, accounts } = activeGame(10); // goal 6
+// Mirrors `contract/src/checkin.rs` tests t11–t12 (R5).
+describe("closers (items 11–12, R5)", () => {
+  test("two check-ins in one block: only the first is a candidate (t11)", () => {
+    const { game, accounts } = activeGame(10); // goal 6, K 5
+    const [a, b, c] = accounts as [string, string, string];
+    const results = [game.checkIn(a), game.checkIn(b, { sameBlock: true }), game.checkIn(c)];
     expect(game.sim.state.open.goal).toBe(6);
-    const results = accounts.slice(0, 7).map((account) => game.checkIn(account));
-    expect(results.map((result) => result.ticket)).toEqual([true, true, true, true, true, true, false]);
-    expect(todaysTicketHolders(game)).toEqual(accounts.slice(0, 6));
-    expect(game.sim.getOpenDay(game.env(HOLDER)).tickets).toBe(6);
+    expect(results.map((result) => result.in_closers)).toEqual([true, false, true]);
+    expect(results.map((result) => result.n)).toEqual([1, 2, 3]);
+    expect(game.sim.state.open.closers).toEqual([a, c]);
   });
 
-  test("check-ins in one block each get a ticket, an atomic batch included", () => {
-    const { game, accounts } = activeGame(10); // goal 6
+  test("five in one block give one candidate (t11)", () => {
+    const { game, accounts } = activeGame(10);
     const batch = accounts.slice(0, 5).map((account, index) => game.checkIn(account, { sameBlock: index > 0 }));
-    expect(batch.map((result) => result.ticket)).toEqual([true, true, true, true, true]);
-    expect(todaysTicketHolders(game)).toEqual(accounts.slice(0, 5));
+    expect(batch.map((result) => result.in_closers)).toEqual([true, false, false, false, false]);
+    expect(game.checkIn(accounts[5] as string).in_closers).toBe(true);
+    expect(game.sim.state.open.closers).toEqual([accounts[0] as string, accounts[5] as string]);
   });
 
-  test("an idle day hands out no tickets", () => {
+  test("the window slides until the goal, then freezes (t12)", () => {
+    const { game, accounts } = activeGame(10);
+    const results = accounts.map((account) => game.checkIn(account));
+    expect(results.map((result) => result.in_closers)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(game.sim.state.open.closers).toEqual(accounts.slice(1, 6));
+    expect(game.sim.getOpenDay(game.env(HOLDER)).closers).toEqual(accounts.slice(1, 6));
+  });
+
+  test("a goal below K: the window never fills (t12)", () => {
+    const { game, accounts } = activeGame(4); // goal 3
+    const results = accounts.map((account) => game.checkIn(account));
+    expect(game.sim.state.open.goal).toBe(3);
+    expect(results.map((result) => result.in_closers)).toEqual([true, true, true, false]);
+    expect(game.sim.state.open.closers).toEqual(accounts.slice(0, 3));
+  });
+
+  test("an idle day has no candidates", () => {
     const { game, accounts } = activeGame(2); // fewer than min_goal
-    expect(game.checkIn(accounts[0] as string).ticket).toBe(false);
-    expect(game.sim.state.tickets.size).toBe(0);
-  });
-
-  test("pick_hero finds the day's holder after the next day reused the slot in the same receipt (item 12)", () => {
-    const { game, accounts } = activeGame(5, { autoPickHero: false }); // goal 3
-    for (const account of accounts) game.checkIn(account); // tickets 1..3: accounts 0..2
-    game.goToDay(3); // day 2 untouched
-    // One receipt: settles day 1 (success) and day 2, then writes ticket 1 of day 3.
-    expect(game.checkIn(accounts[4] as string).ticket).toBe(true);
-    expect(game.sim.state.tickets.get(0)).toMatchObject({
-      day: 3,
-      holder: accounts[4],
-      prev: { day: 1, holder: accounts[0] },
-    });
-
-    const jackpot = game.sim.state.pending_hero?.jackpot ?? 0n;
-    const before = game.sim.ftBalanceOf(accounts[0] as string);
-    game.runPickHero(seedFor(1, 3, 0)); // ticket 1
-    expect(game.sim.ftBalanceOf(accounts[0] as string)).toBe(before + jackpot);
-    expect(game.sim.getHistory(3).find((summary) => summary.day === 1)?.hero).toBe(accounts[0]);
-  });
-
-  test("a slot rewritten by two newer days: the jackpot returns to the pot", () => {
-    const { game, accounts } = activeGame(5, { autoPickHero: false }); // goal 3
-    for (const account of accounts) game.checkIn(account);
-    game.goToDay(2);
-    game.checkIn(accounts[3] as string); // settles day 1; day 2 writes ticket 1 (day 2 will fail)
-    game.sim.takeScheduled(); // the pick_hero promise is lost
-    game.goToDay(3);
-    game.checkIn(accounts[4] as string); // day 3 writes ticket 1 again: day 1's holder is gone
-    game.sim.takeScheduled();
-    const pending = game.sim.state.pending_hero;
-    expect(pending?.day).toBe(1);
-    const pot = game.sim.state.pot;
-
-    game.call("lastcall.test.near", (sim, env) => sim.pickHero({ ...env, seed: seedFor(1, 3, 0) }, 1));
-    expect(game.sim.state.pot).toBe(pot + (pending?.jackpot ?? 0n));
-    expect(game.sim.state.jackpot_pending).toBe(0n);
-    expect(game.sim.getHistory(3).find((summary) => summary.day === 1)?.hero).toBeNull();
-  });
-
-  test("ticket storage does not grow with the number of days", () => {
-    const { game, accounts } = activeGame(5); // goal 3
-    for (let day = 1; day <= 30; day += 1) {
-      game.goToDay(day);
-      for (const account of accounts) game.checkIn(account);
-    }
-    expect(game.sim.state.tickets.size).toBe(3);
+    expect(game.checkIn(accounts[0] as string).in_closers).toBe(false);
+    expect(game.sim.state.open.closers).toEqual([]);
   });
 
   test("a success schedules pick_hero; a failure and an idle day do not", () => {
@@ -265,7 +239,7 @@ describe("tickets (items 11–13, decision 12.11)", () => {
     for (const account of accounts) game.checkIn(account);
     game.goToDay(2);
     game.settle();
-    expect(game.sim.state.pending_hero?.day).toBe(1);
+    expect(game.sim.state.pending_heroes.map((entry) => entry.day)).toEqual([1]);
     expect(game.sim.takeScheduled()).toEqual([{ method: "pick_hero", day: 1 }]);
 
     game.goToDay(3);
@@ -274,22 +248,22 @@ describe("tickets (items 11–13, decision 12.11)", () => {
   });
 });
 
-describe("pick_hero (items 14, 15)", () => {
+describe("pick_hero (items 14, 15, R10)", () => {
   function successfulDay(options: { autoPickHero?: boolean } = {}) {
-    const { game, accounts } = activeGame(5, { autoPickHero: options.autoPickHero ?? false });
+    const { game, accounts } = activeGame(5, { autoPickHero: options.autoPickHero ?? false }); // goal 3
     for (const account of accounts) game.checkIn(account);
     game.goToDay(2);
     game.settle();
     return { game, accounts };
   }
 
-  test("the hero follows the specified hash and receives the jackpot", () => {
+  test("the hero is drawn from the closers by the specified hash and receives the jackpot", () => {
     const { game, accounts } = successfulDay();
-    const pending = game.sim.state.pending_hero;
+    const pending = game.sim.state.pending_heroes[0];
     if (!pending) throw new Error("no pending hero");
+    expect(pending.closers).toEqual(accounts.slice(0, 3));
     const seed = new Uint8Array(32).fill(7);
-    // Everyone checked in in account order, so ticket i + 1 belongs to accounts[i].
-    const hero = accounts[heroIndex(seed, 1, pending.tickets)] as string;
+    const hero = pending.closers[heroIndex(seed, 1, pending.closers.length)] as string;
     const before = game.sim.ftBalanceOf(hero);
 
     game.runPickHero(seed);
@@ -297,9 +271,10 @@ describe("pick_hero (items 14, 15)", () => {
     expect(game.sim.getHistory(1)[0]?.hero).toBe(hero);
     expect(game.sim.state.jackpot_pending).toBe(0n);
     expect(game.sim.state.total_jackpots).toBe(pending.jackpot);
+    expect(game.sim.state.members.get(hero)?.hero_count).toBe(1);
   });
 
-  test("the draw is roughly uniform over the five slots", () => {
+  test("the draw is roughly uniform over five candidates", () => {
     const counts = [0, 0, 0, 0, 0];
     for (let index = 0; index < 1000; index += 1) {
       const seed = new Uint8Array(32);
@@ -314,7 +289,7 @@ describe("pick_hero (items 14, 15)", () => {
     const { game } = successfulDay();
     expect(errorCode(() => game.sim.pickHero(game.env(HOLDER, new Uint8Array(32)), 1))).toBe("ERR_PRIVATE");
     game.sim.pickHero(game.env(CONTRACT, new Uint8Array(32)), 2);
-    expect(game.sim.state.pending_hero?.day).toBe(1);
+    expect(game.sim.state.pending_heroes.map((entry) => entry.day)).toEqual([1]);
     game.runPickHero();
     const after = structuredClone(game.sim.state);
     game.sim.pickHero(game.env(CONTRACT, new Uint8Array(32)), 1);
@@ -322,11 +297,11 @@ describe("pick_hero (items 14, 15)", () => {
   });
 
   test("a hero who left and unregistered: the jackpot returns to the pot", () => {
-    const { game, accounts } = successfulDay();
-    const pending = game.sim.state.pending_hero;
+    const { game } = successfulDay();
+    const pending = game.sim.state.pending_heroes[0];
     if (!pending) throw new Error("no pending hero");
     const seed = new Uint8Array(32).fill(3);
-    const hero = accounts[heroIndex(seed, 1, pending.tickets)] as string;
+    const hero = pending.closers[heroIndex(seed, 1, pending.closers.length)] as string;
 
     game.goToDay(2, 0.9);
     game.call(hero, (sim, env) => sim.leave(env));
@@ -342,23 +317,35 @@ describe("pick_hero (items 14, 15)", () => {
     expect(game.sim.getHistory(2).find((summary) => summary.day === 1)?.hero).toBe(hero);
   });
 
-  test("a draw that never ran expires at the next success", () => {
+  test("a lost draw stays pending next to a newer one; retry_pick_hero reschedules it", () => {
     const { game, accounts } = successfulDay();
-    const first = game.sim.state.pending_hero;
-    game.sim.takeScheduled(); // the promise is lost
+    game.sim.takeScheduled(); // the day-1 promise ran out of gas
     for (const account of accounts) game.checkIn(account);
-    const potBefore = game.sim.state.pot;
     game.goToDay(3);
     game.settle();
+    game.sim.takeScheduled(); // and the day-2 one too
+    const [first, second] = game.sim.state.pending_heroes;
+    expect([first?.day, second?.day]).toEqual([1, 2]);
+    expect(game.sim.state.jackpot_pending).toBe((first?.jackpot ?? 0n) + (second?.jackpot ?? 0n));
 
-    const second = game.sim.state.pending_hero;
-    expect(second?.day).toBe(2);
-    expect(game.sim.state.jackpot_pending).toBe(second?.jackpot ?? -1n);
-    const day2 = game.sim.getHistory(1)[0];
-    // The expired jackpot went back before day 2's shares and jackpot left the pot.
-    expect(game.sim.state.pot).toBe(
-      potBefore + (first?.jackpot ?? 0n) - (day2?.per_share ?? 0n) * 5n - (day2?.jackpot ?? 0n)
-    );
+    expect(errorCode(() => game.call(HOLDER, (sim, env) => sim.retryPickHero(env, 5)))).toBe("ERR_NO_PENDING_HERO");
+    game.call(HOLDER, (sim, env) => sim.retryPickHero(env, 1));
+    game.runPickHero(seedFor(1, 3, 0));
+    expect(game.sim.state.pending_heroes.map((entry) => entry.day)).toEqual([2]);
+    expect(game.sim.getHistory(3).find((summary) => summary.day === 1)?.hero).toBe(accounts[0]);
+    expect(errorCode(() => game.call(HOLDER, (sim, env) => sim.retryPickHero(env, 1)))).toBe("ERR_NO_PENDING_HERO");
+  });
+});
+
+describe("outcome edges (R11)", () => {
+  test("everyone active left during a day with a goal: the day is idle, not a failure", () => {
+    const { game, accounts } = activeGame(3); // goal 3
+    for (const account of accounts) game.call(account, (sim, env) => sim.leave(env));
+    const streak = game.sim.state.streak;
+    game.goToDay(2);
+    game.settle();
+    expect(game.sim.getHistory(1)[0]).toMatchObject({ day: 1, outcome: "Idle", goal: 3, pot_burned: 0n });
+    expect(game.sim.state.streak).toBe(streak);
   });
 });
 
@@ -370,7 +357,7 @@ describe("money and edges (items 16–19)", () => {
     game.settle();
     expect(game.sim.getHistory(1)[0]).toMatchObject({ outcome: "Success", per_share: 0n, jackpot: 0n });
     expect(game.sim.state.rewards.size).toBe(0);
-    expect(game.sim.state.pending_hero).toBeNull();
+    expect(game.sim.state.pending_heroes).toEqual([]);
   });
 
   test("claim without anything to claim, twice", () => {
@@ -465,23 +452,47 @@ describe("kick and backlog (items 24, 27)", () => {
     game.goToDay(4);
     expect(game.sim.getKickable(game.env(HOLDER), 0, 100)).toEqual([lazy]);
     const lazyStake = game.sim.getMember(game.env(HOLDER), lazy)?.effective_stake ?? 0n;
-    const returned = game.call(HOLDER, (sim, env) => sim.kick(env, lazy));
-    expect(returned).toBe(lazyStake - (lazyStake * 1000n) / B);
+    const lazyBalance = game.sim.ftBalanceOf(lazy);
+    const holderBalance = game.sim.ftBalanceOf(HOLDER);
+    const supply = game.sim.state.total_supply;
+    const fee = (lazyStake * 1000n) / B;
+    const bounty = (fee * 2000n) / B; // kick_bounty_bps 2000 (R12)
+    // `kick` returns the bounty; the kicked member gets `stake − fee` (plus claimable, 0 here).
+    expect(game.call(HOLDER, (sim, env) => sim.kick(env, lazy))).toBe(bounty);
+    expect(game.sim.ftBalanceOf(HOLDER)).toBe(holderBalance + bounty);
+    expect(game.sim.ftBalanceOf(lazy)).toBe(lazyBalance + lazyStake - fee);
+    expect(game.sim.state.total_supply).toBe(supply - (fee - bounty));
     expect(game.sim.state.open.goal).toBe(4); // today's goal is fixed
     game.goToDay(5);
     game.settle();
     expect(game.sim.state.open.goal).toBe(3); // ceil(5 × 0.6)
   });
 
-  test("a self-kick costs exactly what leave costs", () => {
+  test("a self-kick costs less than leave by the bounty (API.md Limits)", () => {
     const leaveGame = activeGame(3);
     const kickGame = activeGame(3);
-    for (const { game } of [leaveGame, kickGame]) game.goToDay(5);
-    const left = leaveGame.game.call(leaveGame.accounts[0] as string, (sim, env) => sim.leave(env));
-    const kicked = kickGame.game.call(kickGame.accounts[0] as string, (sim, env) =>
-      sim.kick(env, kickGame.accounts[0] as string)
-    );
-    expect(kicked).toBe(left);
+    for (const { game } of [leaveGame, kickGame]) {
+      game.goToDay(5);
+      game.settle(); // days 1–4 failed: stakes are slashed before the exit
+    }
+    const leaver = leaveGame.accounts[0] as string;
+    const kicker = kickGame.accounts[0] as string;
+    const stake = leaveGame.game.sim.getMember(leaveGame.game.env(HOLDER), leaver)?.effective_stake ?? 0n;
+    const fee = (stake * 1000n) / B;
+    expect(leaveGame.game.call(leaver, (sim, env) => sim.leave(env))).toBe(stake - fee);
+    expect(kickGame.game.call(kicker, (sim, env) => sim.kick(env, kicker))).toBe((fee * 2000n) / B);
+    expect(kickGame.game.sim.ftBalanceOf(kicker) - leaveGame.game.sim.ftBalanceOf(leaver)).toBe((fee * 2000n) / B);
+  });
+
+  test("an unregistered kicker gets no bounty: the whole fee burns (R12)", () => {
+    const { game, accounts } = activeGame(3);
+    game.goToDay(5);
+    game.settle();
+    const supply = game.sim.state.total_supply;
+    const stake = game.sim.getMember(game.env(HOLDER), accounts[0] as string)?.effective_stake ?? 0n;
+    const fee = (stake * 1000n) / B;
+    expect(game.call("stranger.test.near", (sim, env) => sim.kick(env, accounts[0] as string))).toBe(0n);
+    expect(game.sim.state.total_supply).toBe(supply - fee);
   });
 
   test("a backlog above the cap refuses game calls but not transfers or settle", () => {

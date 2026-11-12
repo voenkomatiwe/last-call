@@ -1,5 +1,6 @@
 "use client";
 
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { type QuickCheckIn, useCheckinKey } from "../checkin/use-checkin-key";
@@ -12,7 +13,7 @@ import { createViewProvider } from "../near/view";
 import { useWallet } from "../wallet/use-wallet";
 import { type ActionState, accountActions } from "./actions";
 import { formatBps, formatCountdown, formatLast, formatNear } from "./format";
-import { type GameData, useGame } from "./use-game";
+import { createGameQueryClient, type GameData, useGame } from "./use-game";
 
 // Neutral, functional game screen (plan section 6.2). The visual design and the check-in gesture
 // are open decisions: plain controls until they are made.
@@ -37,7 +38,16 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
-export function GameScreen({ network, contractId, rpcUrl }: Props) {
+export function GameScreen(props: Props) {
+  const [queryClient] = useState(createGameQueryClient);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Game {...props} />
+    </QueryClientProvider>
+  );
+}
+
+function Game({ network, contractId, rpcUrl }: Props) {
   const wallet = useWallet(network);
   const accountId = wallet.state.status === "connected" ? wallet.state.accountId : null;
   const { data, kickable, error, refresh } = useGame(rpcUrl, contractId, accountId);

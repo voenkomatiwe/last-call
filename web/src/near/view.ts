@@ -113,3 +113,11 @@ export function contractPanic(error: unknown): ContractPanic | undefined {
   if (message === undefined) return undefined;
   return { message, code: message.match(/\bERR_[A-Z0-9_]+/)?.[0] };
 }
+
+/** `callView` bound to one contract: `(method, args) => raw JSON`, not yet validated. */
+export function contractView(
+  provider: JsonRpcProvider,
+  contractId: string
+): (method: string, args?: Record<string, unknown>) => Promise<unknown> {
+  return (method, args = {}) => callView(provider, { contractId, method, args });
+}

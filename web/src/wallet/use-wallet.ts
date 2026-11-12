@@ -3,6 +3,7 @@
 import type { NearConnector, NearWalletBase } from "@hot-labs/near-connect";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { OwnAccountAction } from "../checkin/access-key";
 import type { ContractCall } from "../contract/calls";
 import type { NearNetwork } from "../near/near-config";
 import { transactionResult } from "./outcome";
@@ -113,5 +114,23 @@ export function useWallet(network: NearNetwork) {
     return transactionResult(outcome);
   }, []);
 
-  return { state, connect, disconnect, signMessage, callContract };
+  /** Sends wallet actions to the member's own account (check-in key AddKey / DeleteKey). */
+  const sendActions = useCallback(
+    async (receiverId: string, actions: readonly OwnAccountAction[]): Promise<unknown> => {
+      const wallet = connection.current?.wallet;
+      if (!wallet) throw new Error("No wallet is connected");
+      // OwnAccountAction mirrors near-connect's AddKey / DeleteKey shapes (build/actions/types.d.ts).
+      const outcome = await wallet.signAndSendTransaction({
+        receiverId,
+        actions: actions.map((action) => ({
+          ...action,
+          params: { ...action.params },
+        })) as Parameters<NearWalletBase["signAndSendTransaction"]>[0]["actions"],
+      });
+      return transactionResult(outcome);
+    },
+    []
+  );
+
+  return { state, connect, disconnect, signMessage, callContract, sendActions };
 }

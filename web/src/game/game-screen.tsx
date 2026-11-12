@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { type QuickCheckIn, useCheckinKey } from "../checkin/use-checkin-key";
 import { kickCall, retryPickHeroCall } from "../contract/calls";
 import { describeContractError } from "../contract/errors";
 import { parseCheckInResult } from "../contract/views";
@@ -43,12 +44,13 @@ export function GameScreen({ network, contractId, rpcUrl }: Props) {
   const [busy, setBusy] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<string | undefined>(undefined);
 
-  async function send(label: string, call: ActionState["call"], describe?: (result: unknown) => string) {
-    if (!call) return;
+  const quick = useCheckinKey({ rpcUrl, contractId, accountId, sendActions: wallet.sendActions });
+
+  async function execute(label: string, task: () => Promise<unknown>, describe?: (result: unknown) => string) {
     setBusy(label);
     setMessage(undefined);
     try {
-      const result = await wallet.callContract(contractId, call);
+      const result = await task();
       setMessage(describe ? describe(result) : `${label}: done.`);
     } catch (cause) {
       setMessage(`${label} failed: ${describeContractError(cause)}`);
@@ -56,6 +58,11 @@ export function GameScreen({ network, contractId, rpcUrl }: Props) {
       setBusy(undefined);
       refresh();
     }
+  }
+
+  function send(label: string, call: ActionState["call"], describe?: (result: unknown) => string) {
+    if (!call) return;
+    void execute(label, () => wallet.callContract(contractId, call), describe);
   }
 
   return (
@@ -71,7 +78,14 @@ export function GameScreen({ network, contractId, rpcUrl }: Props) {
       ) : (
         <>
           <DaySection data={data} />
-          <AccountSection data={data} busy={busy} message={message} onAction={send} />
+          <AccountSection
+            data={data}
+            busy={busy}
+            message={message}
+            onAction={send}
+            quick={quick}
+            onQuick={(label, task, describe) => void execute(label, task, describe)}
+          />
           <HeroSection data={data} canSend={accountId !== null} busy={busy} onAction={send} />
           <KickSection kickable={kickable} accountId={accountId} busy={busy} onAction={send} />
           <PotSection data={data} />
@@ -155,16 +169,22 @@ function DaySection({ data }: { readonly data: GameData }) {
   );
 }
 
+const ONE_TAP = "Check in (one tap)";
+
 function AccountSection({
   data,
   busy,
   message,
   onAction,
+  quick,
+  onQuick,
 }: {
   readonly data: GameData;
   readonly busy: string | undefined;
   readonly message: string | undefined;
   readonly onAction: (label: string, call: ActionState["call"], describe?: (result: unknown) => string) => void;
+  readonly quick: QuickCheckIn;
+  readonly onQuick: (label: string, task: () => Promise<unknown>, describe?: (result: unknown) => string) => void;
 }) {
   const account = data.account;
   const actions = accountActions(data.game, account);
@@ -233,8 +253,36 @@ function AccountSection({
                 {busy === action.label ? `${action.label}…` : action.label}
               </button>
               {action.note && ` ${action.note}`}
+              {/* One tap next to the wallet check-in, never instead of it: if it fails the wallet still works. */}
+              {action.id === "checkIn" && action.call !== undefined && quick.status === "ready" && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    disabled={busy !== undefined}
+                    onClick={() => onQuick(ONE_TAP, quick.checkIn, describeCheckIn)}
+                  >
+                    {busy === ONE_TAP ? `${ONE_TAP}…` : ONE_TAP}
+                  </button>{" "}
+                  No wallet popup; your account pays the small gas.
+                </>
+              )}
             </li>
           ))}
+          {member && quick.status === "off" && (
+            <li>
+              <button
+                type="button"
+                disabled={busy !== undefined}
+                onClick={() => onQuick("Enable one-tap check-in", quick.enable)}
+              >
+                {busy === "Enable one-tap check-in" ? "Enable one-tap check-in…" : "Enable one-tap check-in"}
+              </button>{" "}
+              One wallet confirmation adds a key to your account that can only call check_in on this contract. After
+              that you check in without a wallet popup; your account pays the small gas. You can always check in through
+              the wallet instead.
+            </li>
+          )}
         </ul>
       )}
       {message && <p role="status">{message}</p>}

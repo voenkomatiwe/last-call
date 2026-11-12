@@ -216,9 +216,205 @@ pub fn register_and_fund(c: &mut Contract, account_id: &AccountId, amount: u128)
     }
 }
 
-/// Invariants I1–I13 (spec S17). TODO(C9).
-pub fn assert_invariants(_c: &Contract) {
-    todo!("C9")
+/// Invariants I1–I13 (spec S17) that one state shows, walking all members. Day-dependent values use
+/// `next` (only settled days, as `get_member`). What needs a call journal — I2 "never grows", I5,
+/// I6 against the check-ins, I7 against earlier states, I9 right after a game call, I10 for days
+/// no member references — is checked by `crate::tests::World` on every call.
+pub fn assert_invariants(c: &Contract) {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use crate::config::HISTORY_LEN;
+    use crate::types::Outcome;
+
+    let today = crate::day::today(c);
+    let next = crate::day::next(c);
+    // I9 (state part): the open day is `next` and never after today.
+    assert_eq!(c.open.day, next, "I9: open.day == next");
+    assert!(next <= today, "I9: open day {next} after today {today}");
+
+    // I1.
+    let balance = c.token.accounts.get(&contract_id()).unwrap_or(0);
+    let buckets = c.pot + c.reserved + c.stake_pool + c.faucet_left + c.jackpot_pending;
+    assert_eq!(balance, buckets, "I1: contract balance vs buckets");
+
+    // I2 (state part).
+    let expected_supply = c
+        .initial_supply
+        .checked_sub(c.total_burned)
+        .unwrap_or_else(|| panic!("I2: total_burned {} > initial_supply", c.total_burned));
+    assert_eq!(c.token.total_supply, expected_supply, "I2: total_supply");
+
+    // I3, I4, I11 and the member side of I10.
+    let (mut all, mut active, mut claimable) = (0u128, 0u128, 0u128);
+    let mut active_count = 0u32;
+    let mut maturing: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut refs: BTreeMap<u32, u32> = BTreeMap::new();
+    for (a, m) in c.members.iter() {
+        assert_eq!(
+            m.activation_day,
+            m.join_day + c.config.warmup_days,
+            "{a}: activation_day"
+        );
+        if let Some(p) = m.last_checkin {
+            assert!(
+                m.activation_day <= p && p <= next,
+                "{a}: check-in day {p} outside [activation, open day]"
+            );
+            // The check-in resolves through p, later resolves go further.
+            assert!(
+                m.resolved_through >= p,
+                "{a}: resolved_through < last_checkin"
+            );
+            if m.resolved_through == p {
+                *refs.entry(p).or_insert(0) += 1;
+            }
+        }
+        assert!(
+            m.resolved_through <= next.max(m.activation_day),
+            "{a}: resolved_through beyond the settled days"
+        );
+        let delta = crate::member::resolve_pure(c, m, next);
+        all += delta.stake;
+        claimable += m.claimable + delta.claimable_add;
+        if m.activation_day <= next {
+            active += delta.stake;
+            active_count += 1;
+        } else {
+            *maturing.entry(m.activation_day).or_insert(0) += 1;
+        }
+    }
+    assert!(
+        all <= c.stake_pool,
+        "I3: Σ stakes {all} > stake_pool {}",
+        c.stake_pool
+    );
+    assert!(
+        active <= c.active_stake,
+        "I3: Σ active stakes {active} > active_stake {}",
+        c.active_stake
+    );
+    assert!(
+        claimable <= c.reserved,
+        "I4: Σ claimable {claimable} > reserved {}",
+        c.reserved
+    );
+    assert_eq!(active_count, c.active_count, "I11: active_count");
+    assert_eq!(c.members.len(), c.members_total, "I11: members_total");
+    for (day, n) in &maturing {
+        assert_eq!(c.maturing.get(day), Some(n), "S6: maturing[{day}]");
+    }
+
+    // I10 for every day a member still references (the rest needs the journal).
+    for (&d, &n) in &refs {
+        if d >= next {
+            // Today's check-in: the day is not settled yet.
+            assert!(
+                c.rewards.get(&d).is_none(),
+                "I10: record of the open day {d}"
+            );
+            continue;
+        }
+        let slot = c.history.get(&(d % HISTORY_LEN)).filter(|s| s.day == d);
+        match c.rewards.get(&d) {
+            Some(r) => {
+                assert_eq!(r.refs, n, "I10: rewards[{d}].refs");
+                // I8: no record with a zero share.
+                assert!(r.per_share > 0, "I8: rewards[{d}] with per_share 0");
+                if let Some(s) = slot {
+                    assert_eq!(
+                        s.outcome,
+                        Outcome::Success,
+                        "I10: rewards[{d}] of a non-success"
+                    );
+                    assert_eq!(s.per_share.0, r.per_share, "rewards[{d}].per_share");
+                }
+            }
+            None => {
+                if let Some(s) = slot {
+                    assert!(
+                        s.outcome != Outcome::Success || s.per_share.0 == 0,
+                        "I10: day {d} succeeded with a share, {n} references, no record"
+                    );
+                }
+            }
+        }
+    }
+
+    // I12.
+    assert!(
+        c.open.checked_stake <= c.open.active_stake,
+        "I12: open.checked_stake {} > open.active_stake {}",
+        c.open.checked_stake,
+        c.open.active_stake
+    );
+    assert!(
+        c.open.active_stake <= c.active_stake,
+        "I12: open.active_stake {} > active_stake {}",
+        c.open.active_stake,
+        c.active_stake
+    );
+    assert!(
+        c.active_stake <= c.stake_pool,
+        "I12: active_stake {} > stake_pool {}",
+        c.active_stake,
+        c.stake_pool
+    );
+
+    // I13 and the shape of the pending heroes (S8, S11).
+    let pending: u128 = c.pending_heroes.iter().map(|p| p.jackpot).sum();
+    assert_eq!(c.jackpot_pending, pending, "I13: jackpot_pending");
+    let k = c.config.closers_k as usize;
+    let mut days = BTreeSet::new();
+    for p in &c.pending_heroes {
+        assert!(days.insert(p.day), "pending hero day {} twice", p.day);
+        assert!(p.day < next, "pending hero of an unsettled day {}", p.day);
+        assert!(
+            p.jackpot > 0,
+            "pending hero of day {} without a jackpot",
+            p.day
+        );
+        assert!(
+            !p.closers.is_empty() && p.closers.len() <= k,
+            "pending hero of day {}: {} closers",
+            p.day,
+            p.closers.len()
+        );
+    }
+
+    // I6 (state part): at most K closers, only within the goal, one per account.
+    let closers = &c.open.closers;
+    assert!(closers.len() <= k, "I6: {} closers > K", closers.len());
+    assert!(
+        closers.len() as u32 <= c.open.count.min(c.open.goal),
+        "I6: {} closers, count {}, goal {}",
+        closers.len(),
+        c.open.count,
+        c.open.goal
+    );
+    let distinct: BTreeSet<&AccountId> = closers.iter().collect();
+    assert_eq!(
+        distinct.len(),
+        closers.len(),
+        "I6: an account twice among the closers"
+    );
+    assert!(c.open.forfeited <= c.open.count, "R4: forfeited > count");
+
+    // I8: the next success cannot spend more than the pot.
+    let mult = crate::math::mult_bps(
+        c.streak.saturating_add(1),
+        c.config.streak_cap,
+        c.config.streak_step_bps,
+    );
+    assert!(
+        crate::math::budget(c.pot, c.config.emit_bps, mult) <= c.pot,
+        "I8: budget > pot"
+    );
+
+    // I7 (state part): the ring holds the last HISTORY_LEN settled days.
+    for d in next.saturating_sub(HISTORY_LEN)..next {
+        let slot = c.history.get(&(d % HISTORY_LEN));
+        assert_eq!(slot.map(|s| s.day), Some(d), "I7: history slot of day {d}");
+    }
 }
 
 #[cfg(test)]

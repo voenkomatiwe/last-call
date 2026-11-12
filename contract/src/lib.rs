@@ -21,6 +21,8 @@ pub mod views;
 
 #[cfg(test)]
 pub mod test_utils;
+#[cfg(test)]
+mod tests;
 
 use near_contract_standards::fungible_token::metadata::{
     FungibleTokenMetadata, FungibleTokenMetadataProvider,

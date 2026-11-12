@@ -38,3 +38,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Next.js
 .next
 next-env.d.ts
+
+# local quick-setup notes
+helper.txt

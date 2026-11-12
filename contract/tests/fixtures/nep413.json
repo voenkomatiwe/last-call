@@ -1,0 +1,80 @@
+{
+  "seed_hex": "6c6173742d63616c6c2f6e65703431332f746573742d766563746f722f763031",
+  "public_key": "ed25519:5Yc5tFNeVrSAvXBnLmaHmKTKrcVacTZ487Gczs4NGeAC",
+  "cases": [
+    {
+      "name": "valid",
+      "account_id": "alice.near",
+      "day": 42,
+      "recipient": "lastcall.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "signature_b64": "9aWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "expected": true
+    },
+    {
+      "name": "wrong_key",
+      "account_id": "alice.near",
+      "day": 42,
+      "recipient": "lastcall.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "signature_b64": "9aWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "public_key": "ed25519:EYPQK9koWQ7rkXxJQPAYvpGHcduACtrAa9w491b9qyef",
+      "expected": false
+    },
+    {
+      "name": "day_plus_one",
+      "account_id": "alice.near",
+      "day": 43,
+      "recipient": "lastcall.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "signature_b64": "9aWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "expected": false
+    },
+    {
+      "name": "other_recipient",
+      "account_id": "alice.near",
+      "day": 42,
+      "recipient": "evil.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "signature_b64": "9aWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "expected": false
+    },
+    {
+      "name": "other_account_id",
+      "account_id": "bob.near",
+      "day": 42,
+      "recipient": "lastcall.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "signature_b64": "9aWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "expected": false
+    },
+    {
+      "name": "nonce_31_bytes",
+      "account_id": "alice.near",
+      "day": 42,
+      "recipient": "lastcall.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHg==",
+      "signature_b64": "9aWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "expected": false
+    },
+    {
+      "name": "corrupted_signature",
+      "account_id": "alice.near",
+      "day": 42,
+      "recipient": "lastcall.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "signature_b64": "9KWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "expected": false
+    },
+    {
+      "name": "non_ed25519_key",
+      "account_id": "alice.near",
+      "day": 42,
+      "recipient": "lastcall.near",
+      "nonce_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "signature_b64": "9aWWCsqh529/ZGfn6XMCDwKPLz3sNaSSlPcD+cm0aoJKAY+poFURZty+/OGlof7IJ+JFLWO+pcr2EddILGj/BA==",
+      "public_key": "secp256k1:2MJonhm7bTbiPuTBizMdvQoWUpFo37RQccW7mdWYrBnjCuX2FEMB53NDYusvkAw9o1zmDNkeobUSEN9qwfayLsqh",
+      "expected": false
+    }
+  ]
+}

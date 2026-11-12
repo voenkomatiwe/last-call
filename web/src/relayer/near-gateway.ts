@@ -42,7 +42,12 @@ export class NearCheckInGateway implements CheckInGateway {
     const member = await this.reader.member(accountId);
     if (!member) return { kind: "not-member" };
     if (!member.checkinKey) return { kind: "no-key" };
-    return { kind: "key", publicKey: member.checkinKey };
+    return {
+      kind: "key",
+      publicKey: member.checkinKey,
+      isActive: member.isActive,
+      checkedInToday: member.checkedInToday,
+    };
   }
 
   async submitCheckIn(submission: CheckInSubmission): Promise<CheckInResult> {

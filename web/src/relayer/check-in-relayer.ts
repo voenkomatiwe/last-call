@@ -18,7 +18,19 @@ export interface CheckInResult {
 export type CheckinKeyLookup =
   | { readonly kind: "not-member" }
   | { readonly kind: "no-key" }
-  | { readonly kind: "key"; readonly publicKey: string };
+  | {
+      readonly kind: "key";
+      readonly publicKey: string;
+      /** Past warm-up today (`get_member().is_active`). */
+      readonly isActive: boolean;
+      readonly checkedInToday: boolean;
+    };
+
+/**
+ * Contract refusals that will not change for this account and day. Their reservation is kept, so a
+ * replayed request cannot make the relayer pay gas for the same failed transaction again and again.
+ */
+const FINAL_REFUSALS = new Set(["ERR_WARMUP", "ERR_ALREADY_CHECKED_IN", "ERR_BAD_DAY", "ERR_BAD_SIGNATURE"]);
 
 /** A contract failure with the `ERR_...` code the contract panicked with (plan section 4.7). */
 export class ContractCallError extends Error {
@@ -56,6 +68,8 @@ export type RelayErrorCode =
   | "ERR_NOT_MEMBER"
   | "ERR_NO_CHECKIN_KEY"
   | "ERR_BAD_SIGNATURE"
+  | "ERR_WARMUP"
+  | "ERR_ALREADY_CHECKED_IN"
   | "ALREADY_SUBMITTED"
   | "CONTRACT_ERROR"
   | "RELAYER_FAILED";
@@ -158,7 +172,9 @@ export class CheckInRelayer {
         });
         return { ok: true, result };
       } catch (error) {
-        this.submitted.delete(reservation);
+        if (!(error instanceof ContractCallError && FINAL_REFUSALS.has(error.code))) {
+          this.submitted.delete(reservation);
+        }
         if (error instanceof ContractCallError) {
           return refuse("CONTRACT_ERROR", `The contract refused the check-in: ${error.code}`, {
             contractCode: error.code,
@@ -206,6 +222,11 @@ export class CheckInRelayer {
     const publicKey = parseEd25519PublicKey(lookup.publicKey);
     if (!(await verifyNep413Signature({ payload, signature: request.signature, publicKey }))) {
       return refuse("ERR_BAD_SIGNATURE", "The signature does not match the member's check-in key");
+    }
+    // Refusals the contract would make anyway, decided before the relayer pays gas for them.
+    if (!lookup.isActive) return refuse("ERR_WARMUP", `${request.accountId} is still in warm-up`);
+    if (lookup.checkedInToday) {
+      return refuse("ERR_ALREADY_CHECKED_IN", `${request.accountId} already checked in on day ${request.day}`);
     }
     return { request };
   }

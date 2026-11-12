@@ -4,7 +4,12 @@ import { KeyPair } from "near-api-js";
 import { checkInPayload, createNonce, hashNep413Payload } from "../web/src/checkin/nep413";
 import { type ContractCall, faucetCall, joinCall, storageDepositCall } from "../web/src/contract/calls";
 import { bytesToBase64 } from "../web/src/near/encoding";
-import { type CheckInGateway, CheckInRelayer, type CheckInSubmission } from "../web/src/relayer/check-in-relayer";
+import {
+  type CheckInGateway,
+  CheckInRelayer,
+  type CheckInSubmission,
+  ContractCallError,
+} from "../web/src/relayer/check-in-relayer";
 import { NearCheckInGateway } from "../web/src/relayer/near-gateway";
 import { type Deployment, LocalChain, type TestAccount } from "./sandbox";
 
@@ -17,6 +22,7 @@ describe.skipIf(!enabled)("the relayer on the real contract", () => {
   let chain: LocalChain;
   let game: Deployment;
   let relayer: CheckInRelayer;
+  let gateway: NearCheckInGateway;
   const settleFirst: boolean[] = [];
   const checkinKey = KeyPair.fromRandom("ed25519");
   const late = KeyPair.fromRandom("ed25519");
@@ -62,7 +68,7 @@ describe.skipIf(!enabled)("the relayer on the real contract", () => {
     keyless = await member("keyless", null);
     await member("filler", null); // three members: goal 3 from day 1
     const relayerAccount = await chain.createAccount("relayer");
-    const gateway = new NearCheckInGateway(game.reader, relayerAccount.account);
+    gateway = new NearCheckInGateway(game.reader, relayerAccount.account);
     // Records whether each submission settled first, and otherwise passes everything through.
     const spy: CheckInGateway = {
       contractId: gateway.contractId,
@@ -93,18 +99,35 @@ describe.skipIf(!enabled)("the relayer on the real contract", () => {
   test("refusals the backend sees itself, and a repeat", async () => {
     const today = (await game.reader.state()).today;
     const again = await relayer.relay(await signedBody(keyed.accountId, today, checkinKey));
-    expect(again).toMatchObject({ ok: false, code: "ALREADY_SUBMITTED" });
+    // The member view already shows today's check-in, so the relayer refuses before sending.
+    expect(again).toMatchObject({ ok: false, code: "ERR_ALREADY_CHECKED_IN" });
     const noKey = await relayer.relay(await signedBody(keyless.accountId, today, checkinKey));
     expect(noKey).toMatchObject({ ok: false, code: "ERR_NO_CHECKIN_KEY" });
     const wrongDay = await relayer.relay(await signedBody(keyed.accountId, today + 1, checkinKey));
     expect(wrongDay).toMatchObject({ ok: false, code: "ERR_BAD_DAY", today });
   }, 120_000);
 
-  test("the contract's own refusal surfaces as its ERR_ code", async () => {
+  test("warm-up is refused before any transaction; the contract's own refusal maps to its code", async () => {
     warming = await member("warming", late.getPublicKey().toString()); // joins today: in warm-up
     const today = (await game.reader.state()).today;
+    const submissions = settleFirst.length;
     const outcome = await relayer.relay(await signedBody(warming.accountId, today, late));
-    expect(outcome).toMatchObject({ ok: false, code: "CONTRACT_ERROR", contractCode: "ERR_WARMUP" });
+    expect(outcome).toMatchObject({ ok: false, code: "ERR_WARMUP" });
+    expect(settleFirst.length).toBe(submissions); // nothing was sent: the relayer paid no gas
+
+    // Bypassing the relayer's checks, the contract refuses on chain and the gateway maps the code.
+    const body = await signedBody(warming.accountId, today, late);
+    const error = await gateway
+      .submitCheckIn({
+        accountId: body.account_id,
+        day: today,
+        nonceBase64: body.nonce,
+        signatureBase64: body.signature,
+        settleFirst: false,
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ContractCallError);
+    expect((error as ContractCallError).code).toBe("ERR_WARMUP");
   }, 120_000);
 
   test("with more than auto_settle_cap days pending it settles and checks in in one transaction", async () => {

@@ -49,8 +49,17 @@ export class FakeGateway implements CheckInGateway {
     in_closers: false,
   });
 
-  member(accountId: string, publicKey: string = PUBLIC_KEY): this {
-    this.keys.set(accountId, { kind: "key", publicKey });
+  member(
+    accountId: string,
+    publicKey: string = PUBLIC_KEY,
+    state: { isActive?: boolean; checkedInToday?: boolean } = {}
+  ): this {
+    this.keys.set(accountId, {
+      kind: "key",
+      publicKey,
+      isActive: state.isActive ?? true,
+      checkedInToday: state.checkedInToday ?? false,
+    });
     return this;
   }
 

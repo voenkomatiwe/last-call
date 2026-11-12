@@ -238,6 +238,40 @@ describe("CheckInRelayer order and contract errors", () => {
     expect(gateway.submissions).toHaveLength(2);
   });
 
+  test("warm-up and an earlier check-in are refused before the relayer pays gas", async () => {
+    const { gateway, relayer } = setup();
+    gateway.member(ALICE, undefined, { isActive: false });
+    expect(await relayer.relay(await signedRequest(ALICE, 7))).toMatchObject({ ok: false, code: "ERR_WARMUP" });
+    gateway.member(ALICE, undefined, { checkedInToday: true });
+    expect(await relayer.relay(await signedRequest(ALICE, 7))).toMatchObject({
+      ok: false,
+      code: "ERR_ALREADY_CHECKED_IN",
+    });
+    expect(gateway.submissions).toEqual([]);
+  });
+
+  test("a final contract refusal keeps the reservation: a replay costs no second transaction", async () => {
+    const { gateway, relayer } = setup();
+    gateway.respond = async () => {
+      throw new ContractCallError("ERR_ALREADY_CHECKED_IN");
+    };
+    const request = await signedRequest(ALICE, 7);
+    expect(await relayer.relay(request)).toMatchObject({ code: "CONTRACT_ERROR" });
+    expect(await relayer.relay(request)).toMatchObject({ ok: false, code: "ALREADY_SUBMITTED" });
+    expect(gateway.submissions).toHaveLength(1);
+  });
+
+  test("a transient refusal releases the reservation so the member can retry", async () => {
+    const { gateway, relayer } = setup();
+    gateway.respond = async () => {
+      throw new ContractCallError("ERR_LOW_GAS");
+    };
+    const request = await signedRequest(ALICE, 7);
+    expect(await relayer.relay(request)).toMatchObject({ contractCode: "ERR_LOW_GAS" });
+    gateway.respond = async (submission) => ({ day: submission.day, n: 1, goal: 5, in_closers: true });
+    expect(await relayer.relay(request)).toMatchObject({ ok: true });
+  });
+
   test("other contract errors are returned with their code and not retried", async () => {
     const { gateway, relayer } = setup();
     gateway.respond = async () => {

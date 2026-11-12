@@ -1,0 +1,71 @@
+{
+  "mainnet": {
+    "config": {
+      "day_length_s": 86400,
+      "warmup_days": 2,
+      "goal_bps": 6000,
+      "min_goal": 5,
+      "closers_k": 5,
+      "jackpot_mult": 10,
+      "emit_bps": 5,
+      "streak_step_bps": 1000,
+      "streak_cap": 30,
+      "burn_bps": 500,
+      "slash_bps": 1000,
+      "join_stake": "100000000000000000000000",
+      "member_storage_deposit": "10000000000000000000000",
+      "faucet_amount": "0",
+      "inactive_days": 5,
+      "kick_bounty_bps": 2000
+    },
+    "total_supply": "1000000000000000000000000000",
+    "pot_bps": 5000,
+    "faucet_bps": 0
+  },
+  "testnet": {
+    "config": {
+      "day_length_s": 600,
+      "warmup_days": 2,
+      "goal_bps": 6000,
+      "min_goal": 5,
+      "closers_k": 5,
+      "jackpot_mult": 10,
+      "emit_bps": 5,
+      "streak_step_bps": 1000,
+      "streak_cap": 30,
+      "burn_bps": 500,
+      "slash_bps": 1000,
+      "join_stake": "100000000000000000000000",
+      "member_storage_deposit": "10000000000000000000000",
+      "faucet_amount": "0",
+      "inactive_days": 6,
+      "kick_bounty_bps": 2000
+    },
+    "total_supply": "1000000000000000000000000000",
+    "pot_bps": 5000,
+    "faucet_bps": 0
+  },
+  "demo": {
+    "config": {
+      "day_length_s": 60,
+      "warmup_days": 1,
+      "goal_bps": 6000,
+      "min_goal": 3,
+      "closers_k": 5,
+      "jackpot_mult": 10,
+      "emit_bps": 100,
+      "streak_step_bps": 1000,
+      "streak_cap": 10,
+      "burn_bps": 500,
+      "slash_bps": 1000,
+      "join_stake": "1000000000000000000000",
+      "member_storage_deposit": "10000000000000000000000",
+      "faucet_amount": "5000000000000000000000",
+      "inactive_days": 3,
+      "kick_bounty_bps": 2000
+    },
+    "total_supply": "1000000000000000000000000000",
+    "pot_bps": 5000,
+    "faucet_bps": 100
+  }
+}

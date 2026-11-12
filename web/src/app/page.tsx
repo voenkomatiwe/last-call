@@ -1,8 +1,31 @@
+import { GameScreen } from "@/game/game-screen";
+import { nearConfigFromEnv } from "@/near/near-config";
+
 export default function HomePage() {
+  let config: ReturnType<typeof nearConfigFromEnv>;
+  try {
+    config = nearConfigFromEnv();
+  } catch (error) {
+    return (
+      <main>
+        <h1>Last Call ($LAST)</h1>
+        <p role="alert">
+          The page is not configured: {error instanceof Error ? error.message : String(error)}. Copy web/.env.example to
+          web/.env.local and set NEXT_PUBLIC_CONTRACT_ID.
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main>
       <h1>Last Call ($LAST)</h1>
-      <p>The daily check-in game is under construction.</p>
+      <p>
+        A memecoin with a daily check-in. Every day a share of active members must check in. A successful day pays
+        everyone who did and draws a hero for the jackpot; a failed day burns part of the pot and slashes absent
+        members.
+      </p>
+      <GameScreen network={config.network} contractId={config.contractId} rpcUrl={config.rpcUrl} />
     </main>
   );
 }

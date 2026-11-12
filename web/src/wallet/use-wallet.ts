@@ -3,7 +3,9 @@
 import type { NearConnector, NearWalletBase } from "@hot-labs/near-connect";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { ContractCall } from "../contract/calls";
 import type { NearNetwork } from "../near/near-config";
+import { transactionResult } from "./outcome";
 
 export type WalletState =
   | { readonly status: "loading" }
@@ -42,8 +44,11 @@ export function useWallet(network: NearNetwork) {
       const { NearConnector } = await import("@hot-labs/near-connect");
       if (!active) return;
 
-      // Only wallets that can sign NEP-413 messages on this network are offered.
-      connector = new NearConnector({ network, features: { signMessage: true, [network]: true } });
+      // Only wallets that can sign NEP-413 messages and send transactions on this network are offered.
+      connector = new NearConnector({
+        network,
+        features: { signMessage: true, signAndSendTransaction: true, [network]: true },
+      });
       const current: Connection = { connector, wallet: undefined };
       connection.current = current;
 
@@ -92,5 +97,21 @@ export function useWallet(network: NearNetwork) {
     []
   );
 
-  return { state, connect, disconnect, signMessage };
+  /** Sends one function call from the connected account and returns the method's JSON result. */
+  const callContract = useCallback(async (contractId: string, call: ContractCall): Promise<unknown> => {
+    const wallet = connection.current?.wallet;
+    if (!wallet) throw new Error("No wallet is connected");
+    const outcome = await wallet.signAndSendTransaction({
+      receiverId: contractId,
+      actions: [
+        {
+          type: "FunctionCall",
+          params: { methodName: call.methodName, args: call.args, gas: call.gas, deposit: call.deposit },
+        },
+      ],
+    });
+    return transactionResult(outcome);
+  }, []);
+
+  return { state, connect, disconnect, signMessage, callContract };
 }

@@ -11,13 +11,13 @@
     "dev": "bun run --filter @last-call/web dev",
     "build": "bun run --filter @last-call/web build",
     "start": "bun run --filter @last-call/web start",
+    "sim": "bun sim/run.ts",
     "biome:check": "biome check .",
     "biome:fix": "biome check --write .",
-    "typecheck": "bun run --filter @last-call/web typecheck && bun run typecheck:tasks",
+    "typecheck": "bun check && bun run --filter @last-call/web typecheck",
     "test": "bun test",
     "check": "bun run biome:check && bun run typecheck && bun run test",
-    "prepare": "husky",
-    "typecheck:tasks": "test ! -f docs/tasks/tasks.ts || bun check docs/tasks/tasks.ts docs/tasks/tasks.test.ts"
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",

@@ -12,6 +12,7 @@
     "build": "bun run --filter @last-call/web build",
     "start": "bun run --filter @last-call/web start",
     "sim": "bun sim/run.ts",
+    "demo": "bun scripts/demo.ts",
     "biome:check": "biome check .",
     "biome:fix": "biome check --write .",
     "typecheck": "bun check && bun run --filter @last-call/web typecheck",

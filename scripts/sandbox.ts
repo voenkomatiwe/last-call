@@ -54,6 +54,8 @@ export interface TestAccount {
 
 export interface Deployment {
   readonly contractId: string;
+  /** The contract account with its deploy key (until the demo deletes it). */
+  readonly contract: TestAccount;
   readonly holder: TestAccount;
   readonly reader: ContractReader;
   readonly dayMs: number;
@@ -88,9 +90,22 @@ export class LocalChain {
     }
   }
 
-  /** Stops the node and removes its temporary home directory. */
-  async stop(): Promise<void> {
-    await this.sandbox.tearDown();
+  /**
+   * Stops the node and removes its temporary home directory. near-sandbox 0.3.5 waits for an exit
+   * event that never comes if the node already crashed, so the wait is bounded.
+   */
+  async stop(timeoutMs = 15_000): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), timeoutMs);
+    });
+    try {
+      const result = await Promise.race([this.sandbox.tearDown().then(() => "stopped" as const), timeout]);
+      if (result === "timeout")
+        console.warn(`near-sandbox did not stop within ${timeoutMs} ms; check for a leftover process`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Creates `<prefix>.sandbox` with a fresh full-access key held in memory. */
@@ -126,6 +141,7 @@ export class LocalChain {
     });
     return {
       contractId: contract.accountId,
+      contract,
       holder,
       reader: new ContractReader(this.provider, contract.accountId),
       dayMs: Number(config.day_length_s) * 1000,
@@ -146,6 +162,7 @@ export class LocalChain {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: "ff", method: "sandbox_fast_forward", params: { delta_height: n } }),
+        signal: AbortSignal.timeout(120_000),
       });
       const body = (await response.json()) as { error?: unknown };
       if (body.error) throw new Error(`sandbox_fast_forward failed: ${JSON.stringify(body.error)}`);

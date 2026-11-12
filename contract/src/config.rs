@@ -33,6 +33,8 @@ pub const MIN_DAY_LENGTH_S: u64 = 10;
 pub const MAX_DAY_LENGTH_S: u64 = 31_536_000;
 /// Upper bound of `jackpot_mult` (S3). Keeps `count + jackpot_mult` far from `u32::MAX`.
 pub const MAX_JACKPOT_MULT: u32 = 1_000;
+/// Upper bound of `inactive_days` (S3). Keeps `since + inactive_days` in `kick` far from `u32::MAX`.
+pub const MAX_INACTIVE_DAYS: u32 = 10_000;
 
 /// Game parameters (S2). Fixed at `new`; there is no method to change them.
 #[near(serializers = [json, borsh])]
@@ -88,7 +90,10 @@ pub fn validate(
     );
 
     require!(config.warmup_days >= 1, ERR_BAD_CONFIG);
-    require!(config.inactive_days >= 1, ERR_BAD_CONFIG);
+    require!(
+        (1..=MAX_INACTIVE_DAYS).contains(&config.inactive_days),
+        ERR_BAD_CONFIG
+    );
     require!(config.min_goal >= 1, ERR_BAD_CONFIG);
     require!(
         (1..=MAX_CLOSERS_K).contains(&config.closers_k),
@@ -209,6 +214,10 @@ mod tests {
     // S3: lower/upper bounds.
     bad_config! { t26_bad_config_rejected_warmup_days_zero, |a| a.config.warmup_days = 0 }
     bad_config! { t26_bad_config_rejected_inactive_days_zero, |a| a.config.inactive_days = 0 }
+    bad_config! {
+        t26_bad_config_rejected_inactive_days_too_big,
+        |a| a.config.inactive_days = 10_001
+    }
     bad_config! { t26_bad_config_rejected_min_goal_zero, |a| a.config.min_goal = 0 }
     bad_config! { t26_bad_config_rejected_closers_k_zero, |a| a.config.closers_k = 0 }
     bad_config! { t26_bad_config_rejected_closers_k_17, |a| a.config.closers_k = 17 }
@@ -290,6 +299,7 @@ mod tests {
         a.config.closers_k = 1;
         a.config.day_length_s = 31_536_000; // 365 × 86 400
         a.config.jackpot_mult = 1_000;
+        a.config.inactive_days = 10_000;
         // 2500 × (10 000 + 30 × 1000) = 10^8 exactly.
         a.config.emit_bps = 2_500;
         run(&a);

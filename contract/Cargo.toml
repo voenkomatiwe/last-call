@@ -1,0 +1,61 @@
+[package]
+name = "last-call"
+version = "0.1.0"
+edition = "2024"
+resolver = "3"
+rust-version = "1.95"
+license = "MIT"
+# NEP-0330 is automatically implemented for all contracts built with https://github.com/near/cargo-near.
+# Link to the repository will be available via `contract_source_metadata` view-function.
+repository = "https://github.com/voenkomatiwe/last-call"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# fields to configure build with WASM reproducibility, according to specs
+# in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
+[package.metadata.near.reproducible_build]
+# docker image, descriptor of build environment
+image = "sourcescan/cargo-near:0.23.0-rust-1.99.1"
+# tag after colon above serves only descriptive purpose; image is identified by digest
+# TODO(C12): fill in the digest of the image above from Docker Hub.
+image_digest = "sha256:<C12 возьмёт с Docker Hub>"
+# list of environment variables names, whose values, if set, will be used as external build parameters
+# in a reproducible manner
+passed_env = []
+# build command inside of docker container
+container_build_command = [
+    "cargo",
+    "near",
+    "build",
+    "non-reproducible-wasm",
+    "--locked",
+]
+
+[dependencies]
+near-sdk = "=5.30.1"
+near-contract-standards = "=5.30.1"
+
+[dev-dependencies]
+near-sdk = { version = "=5.30.1", features = ["unit-testing"] }
+near-sandbox = "=0.4.0"
+near-api = "=0.8.7"
+tokio = { version = "=1.54.1", features = ["full"] }
+serde_json = "=1.0.154"
+# Only for generating the NEP-413 test vector (C4).
+ed25519-dalek = "=2.2.0"
+
+[profile.release]
+codegen-units = 1
+# Tell `rustc` to optimize for small code size.
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+# Required: bucket underflow protection relies on the panic (spec S1).
+overflow-checks = true
+
+# `cfg(near)` was introduced in `near-sdk` v5.27.0, and is expected cfg now
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(near)']

@@ -18,8 +18,8 @@ crate-type = ["cdylib", "rlib"]
 # docker image, descriptor of build environment
 image = "sourcescan/cargo-near:0.23.0-rust-1.99.1"
 # tag after colon above serves only descriptive purpose; image is identified by digest
-# TODO(C12): fill in the digest of the image above from Docker Hub.
-image_digest = "sha256:<C12 возьмёт с Docker Hub>"
+# Verified on Docker Hub 2026-11-12 (tag 0.23.0-rust-1.99.1, linux/amd64).
+image_digest = "sha256:8013f039e8005627f10ae66b5519d1a6eeeed7d7aef4b5067d5e9a86c4302fcc"
 # list of environment variables names, whose values, if set, will be used as external build parameters
 # in a reproducible manner
 passed_env = []

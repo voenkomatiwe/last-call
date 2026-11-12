@@ -8,6 +8,9 @@ HACKATHON 2026. Submission target: **14 November 2026, 12:00 UTC** (hard deadlin
 - Plan of record: `docs/plans/Last Call — план для разработчика.md`. Section 4 (contract interface
   and formulas) is the contract between Rust and TypeScript. When an interface, formula, or
   parameter changes, update that document first, then the code.
+- Contract spec: `docs/plans/contract-spec.md` consolidates section 4 with the 11–12 November
+  fixes and takes precedence over it for the contract interface, formulas, parameters, events,
+  errors, and invariants. Contract tasks and their order: `docs/plans/contract-plan.md`.
 - Work state: `docs/tasks/items/LC-NNN-*.md`; each task's frontmatter `status` is authoritative.
 - Task-board contract and commands: `docs/tasks/README.md`.
 - Reusable workflow: `.claude/skills/managing-last-call-work/SKILL.md`.
@@ -81,8 +84,9 @@ and dates validated and atomic.
 - Commands, from the repository root: `bun run dev` (app and backend on one port), `bun run build`,
   and `bun run check` (Biome, type checking, tests). `web/` must declare `@types/node`; without it
   `next build` stalls trying to install it through npm.
-- The contract in `contract/` is written by the Rust developer. Do not write or change contract
-  code; propose interface changes through the plan.
+- The contract in `contract/` is owned by the Rust developer. Agents change contract code only
+  within a task the owner assigned (see `docs/plans/contract-plan.md`); interface changes go
+  through `docs/plans/contract-spec.md` first.
 - The contract is the source of game state. The backend relays and reads; it never becomes an
   authority the game depends on. Direct contract calls must keep working without the backend.
 - Validate untrusted input at every boundary: route handlers, RPC responses, wallet responses.

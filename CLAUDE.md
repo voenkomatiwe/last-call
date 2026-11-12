@@ -1,3 +1,13 @@
+# Claude project instructions
+
+@AGENTS.md
+
+Use the project skill `/managing-last-call-work` whenever starting, resuming, blocking, handing
+off, reviewing, or completing an implementation task. Keep durable state in `docs/tasks`; do not
+rely on chat history as the source of truth.
+
+## Bun
+
 Default to using Bun instead of Node.js.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
@@ -38,76 +48,11 @@ Use `bun check` to type check the project. It reads `tsconfig.json` and reports 
 - `bun check src/index.ts` checks one file and what it imports
 - `bun --check src/index.ts`, `bun test --check` and `bun build --check` type check first, and do nothing else if there is an error
 
-## Frontend
+## Frontend and backend
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
+The web app and its backend are one Next.js project in `web/` (App Router, route handlers), run
+through Bun (`bun install`, `bun run dev`). This is the exception to the rules above: inside `web/`
+use Next.js conventions instead of `Bun.serve()` and HTML imports. Scripts, the simulation, and
+tests outside `web/` stay plain Bun.
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.

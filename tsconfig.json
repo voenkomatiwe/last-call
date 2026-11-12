@@ -26,5 +26,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // The web app is type checked with its own configuration (`web/tsconfig.json`).
+  "exclude": ["web", "node_modules"]
 }

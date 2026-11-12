@@ -1,15 +1,31 @@
 {
   "name": "last-call",
-  "module": "index.ts",
-  "type": "module",
   "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
-    "typecheck": "bun check"
+    "dev": "bun run --filter @last-call/web dev",
+    "build": "bun run --filter @last-call/web build",
+    "start": "bun run --filter @last-call/web start",
+    "biome:check": "biome check .",
+    "biome:fix": "biome check --write .",
+    "typecheck": "bun check && bun run --filter @last-call/web typecheck",
+    "test": "bun test",
+    "check": "bun run biome:check && bun run typecheck && bun run test",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@biomejs/biome": "2.6.7",
+    "@types/bun": "1.4.4",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "typescript": "7.0.2"
   },
-  "peerDependencies": {
-    "typescript": "^7"
+  "lint-staged": {
+    "*.{js,mjs,cjs,jsx,ts,mts,cts,tsx,json,jsonc,css}": "biome check --write --no-errors-on-unmatched"
   }
 }

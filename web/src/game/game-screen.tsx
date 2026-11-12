@@ -1,22 +1,25 @@
 "use client";
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { type QuickCheckIn, useCheckinKey } from "../checkin/use-checkin-key";
-import { kickCall, retryPickHeroCall } from "../contract/calls";
+import { checkInCall, kickCall, retryPickHeroCall } from "../contract/calls";
 import { describeContractError } from "../contract/errors";
 import { parseCheckInResult } from "../contract/views";
 import { type AccessKeySummary, accessKeySummary } from "../near/access-keys";
 import type { NearNetwork } from "../near/near-config";
 import { createViewProvider } from "../near/view";
 import { useWallet } from "../wallet/use-wallet";
-import { type ActionState, accountActions } from "./actions";
+import { type ActionState, accountActions, hasBacklog } from "./actions";
+import { BarScene } from "./bar/bar-scene";
+import { barDay, barMode } from "./bar/events";
 import { formatBps, formatCountdown, formatLast, formatNear } from "./format";
 import { createGameQueryClient, type GameData, useGame } from "./use-game";
 
-// Neutral, functional game screen (plan section 6.2). The visual design and the check-in gesture
-// are open decisions: plain controls until they are made.
+// The game screen (plan section 6.2). A joined member plays the day in the bar (LC-021, plan
+// "Решение 13.11 (UI)"); everything else stays on the neutral, functional screen below it.
+// `?ui=plain` hides the bar: the kill-switch fallback with the plain check-in button.
 
 interface Props {
   readonly network: NearNetwork;
@@ -55,6 +58,23 @@ function Game({ network, contractId, rpcUrl }: Props) {
   const [message, setMessage] = useState<string | undefined>(undefined);
 
   const quick = useCheckinKey({ rpcUrl, contractId, accountId, sendActions: wallet.sendActions });
+  const [plain, setPlain] = useState(false);
+  useEffect(() => {
+    setPlain(new URLSearchParams(window.location.search).get("ui") === "plain");
+  }, []);
+
+  // The bar's check-in goes through the same path as the button: the one-tap key when it is ready,
+  // otherwise the wallet. Either way the page re-reads the contract afterwards.
+  const { callContract } = wallet;
+  const { status: quickStatus, checkIn: quickCheckIn } = quick;
+  const checkInFromBar = useCallback(async () => {
+    try {
+      const result = quickStatus === "ready" ? await quickCheckIn() : await callContract(contractId, checkInCall());
+      return parseCheckInResult(result);
+    } finally {
+      refresh();
+    }
+  }, [quickStatus, quickCheckIn, callContract, contractId, refresh]);
 
   async function execute(label: string, task: () => Promise<unknown>, describe?: (result: unknown) => string) {
     setBusy(label);
@@ -87,6 +107,9 @@ function Game({ network, contractId, rpcUrl }: Props) {
         <p>Loading the game from {contractId}…</p>
       ) : (
         <>
+          {!plain && data.account?.member && accountId && (
+            <Bar data={data} accountId={accountId} onCheckIn={checkInFromBar} />
+          )}
           <DaySection data={data} />
           <AccountSection
             data={data}
@@ -104,6 +127,36 @@ function Game({ network, contractId, rpcUrl }: Props) {
         </>
       )}
     </>
+  );
+}
+
+function Bar({
+  data,
+  accountId,
+  onCheckIn,
+}: {
+  readonly data: GameData;
+  readonly accountId: string;
+  readonly onCheckIn: () => Promise<ReturnType<typeof parseCheckInResult>>;
+}) {
+  const member = data.account?.member;
+  const { config } = data.game;
+  const day = useMemo(() => barDay(data.game.state, data.openDay), [data.game.state, data.openDay]);
+  const facts = useMemo(
+    () => ({ closersK: config.closersK, slashPct: config.slashBps / 100 }),
+    [config.closersK, config.slashBps]
+  );
+  if (!member) return null;
+  return (
+    <BarScene
+      day={day}
+      mode={barMode(member, hasBacklog(data.game))}
+      checkedInToday={member.checkedInToday}
+      accountId={accountId}
+      streak={member.currentPersonalStreak}
+      facts={facts}
+      onCheckIn={onCheckIn}
+    />
   );
 }
 

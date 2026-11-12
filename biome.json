@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!!contract", "!!**/*.md"]
+    "includes": ["**", "!!contract", "!!**/*.md", "!!web/public/bar"]
   },
   "formatter": {
     "enabled": true,

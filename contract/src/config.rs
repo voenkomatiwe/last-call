@@ -16,7 +16,9 @@ pub const AUTO_SETTLE_CAP: u32 = 50;
 pub const MAX_SETTLE_DAYS: u32 = 500;
 /// Size of the history ring: `history[d % HISTORY_LEN]` (S4).
 pub const HISTORY_LEN: u32 = 64;
-/// Static gas of the `pick_hero` promise (S8, S11). TODO(C11): measure, set to 1.5 × measured.
+/// Static gas of the `pick_hero` promise (S8, S11). C11 measured 2.46–2.52 Tgas burnt on nearcore
+/// 2.14.0; kept at about 4× that as headroom for protocol gas changes, since the deployed contract
+/// has no keys and cannot be upgraded (spec S4, decision of 12 November).
 pub const PICK_HERO_GAS: Gas = Gas::from_tgas(10);
 /// Gas kept for the rest of the call when a `pick_hero` promise is scheduled (S5).
 pub const GAS_RESERVE: Gas = Gas::from_tgas(5);

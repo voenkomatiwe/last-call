@@ -24,6 +24,8 @@
     "@types/bun": "1.4.4",
     "husky": "9.1.7",
     "lint-staged": "17.6.0",
+    "near-api-js": "7.4.0",
+    "near-sandbox": "0.3.5",
     "typescript": "7.0.2"
   },
   "lint-staged": {

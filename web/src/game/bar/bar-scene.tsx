@@ -5,9 +5,10 @@ import "./bar.css";
 import { useEffect, useRef, useState } from "react";
 
 import type { CheckInResult } from "../../contract/views";
+import type { BoardText } from "../street/street-art";
 import { type BarDay, type BarMode, type BarSnapshot, sceneEvents } from "./events";
 import { type BarFacts, bartenderError, chatLines, hintLines, ownCheckInLine } from "./lines";
-import { createBarScene, type BarScene as Engine, type FocusTarget } from "./scene";
+import { createBarScene, type BarScene as Engine, type FocusTarget, type Place } from "./scene";
 import { type PrimaryAction, streakTier } from "./streak-tier";
 
 /** HUD numbers ask the scene to ring their object with this window event (LC-028). */
@@ -37,6 +38,12 @@ export interface BarSceneProps {
   readonly nightLengthMs: number;
   /** The one thing the screen asks for now; only "drink" makes the glass glow. */
   readonly primary: PrimaryAction;
+  /** Street (not joined yet) or bar; street → bar plays the entry walk. */
+  readonly place: Place;
+  /** The chalk board on the street. */
+  readonly board: BoardText;
+  /** The entry walk finished and the camera settled at the bar. */
+  readonly onEntered?: () => void;
 }
 
 export function BarScene({
@@ -52,6 +59,9 @@ export function BarScene({
   nightEndsAt,
   nightLengthMs,
   primary,
+  place,
+  board,
+  onEntered,
 }: BarSceneProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,6 +74,8 @@ export function BarScene({
   const engine = useRef<Engine | null>(null);
   const checkInRef = useRef(onCheckIn);
   checkInRef.current = onCheckIn;
+  const enteredRef = useRef(onEntered);
+  enteredRef.current = onEntered;
   /** The player's own confirmed check-in, shown before the next poll catches up. */
   const [own, setOwn] = useState<{ day: number; n: number } | null>(null);
 
@@ -82,6 +94,7 @@ export function BarScene({
       elements: { root, canvas, say, bang, tip, bell, sign, ghost },
       assetBase: "/bar",
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      onEntered: () => enteredRef.current?.(),
       onFullDrink: () => {
         checkInRef.current().then(
           (result) => {
@@ -105,6 +118,15 @@ export function BarScene({
   useEffect(() => {
     engine.current?.setMode(mode);
   }, [mode]);
+
+  // Place first: the greeting below depends on it.
+  useEffect(() => {
+    engine.current?.setPlace(place);
+  }, [place]);
+
+  useEffect(() => {
+    engine.current?.setBoard(board);
+  }, [board]);
 
   // Streak tier: greet on the first value, celebrate a new tier, crack the glass when the streak is lost.
   const lastStreak = useRef<number | null>(null);

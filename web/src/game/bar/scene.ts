@@ -6,6 +6,7 @@
 // Browser-only: import it from a client component, inside an effect.
 
 import { gsap } from "gsap";
+import { type BoardText, createStreetArt, doorRect, STREET_PUSH, type StreetState } from "../street/street-art";
 import { type BarMode, drunkLevel } from "./events";
 import { cheerFor, LINES } from "./lines";
 import {
@@ -27,6 +28,12 @@ import {
   stepConfetti,
 } from "./scene-extras";
 import { streakTier } from "./streak-tier";
+
+/** Where the camera is: in front of the pub (not joined yet) or inside at the bar. */
+export type Place = "street" | "bar";
+
+/** How a line reads: plain, good news, a nudge, or something that went wrong. */
+export type SayTone = "info" | "good" | "warn" | "error";
 
 /** What a HUD number points at in the scene. */
 export type FocusTarget = "glass" | "streak" | "goal" | "pot" | "clock";
@@ -62,6 +69,8 @@ export interface SceneOptions {
   readonly reducedMotion: boolean;
   /** The player drank to the bottom in `ready` mode: send the check-in, then call `checkInSucceeded` or `checkInFailed`. */
   readonly onFullDrink: () => void;
+  /** The street entry finished: the camera has settled at the bar (LC-024). */
+  readonly onEntered?: () => void;
 }
 
 export interface CheckInOutcome {
@@ -80,7 +89,7 @@ export interface BarScene {
   newDay(): void;
   checkInSucceeded(outcome: CheckInOutcome, line: string): void;
   checkInFailed(line: string): void;
-  say(text: string, who?: string): void;
+  say(text: string, who?: string, tone?: SayTone): void;
   /** Personal streak and the player name (plaque, glass initial): sets the tier, greets or celebrates. */
   setStreak(streak: number, name: string): void;
   /** When tonight ends (epoch ms, this page clock) and how long a night is. */
@@ -92,6 +101,13 @@ export interface BarScene {
   focus(target: FocusTarget): void;
   /** Whether the glass is the one thing to touch now (else it does not glow). */
   setPrimary(glass: boolean): void;
+  /**
+   * Street or bar. The first call places the camera; street → bar afterwards plays the entry: the door
+   * opens, the camera walks in, the crowd greets the new member.
+   */
+  setPlace(place: Place): void;
+  /** Tonight's goal and the stake for the chalk board on the street. */
+  setBoard(board: BoardText): void;
   destroy(): void;
 }
 
@@ -178,7 +194,8 @@ export function createBarScene(options: SceneOptions): BarScene {
   let ch = 0;
   let fw = 0;
   let ox = 0;
-  const PORTRAIT = 0.66;
+  // Same portrait ratio as the hall column (bar.css), so the full-width bar and the column agree.
+  const PORTRAIT = 0.62;
   let dpr = 1;
   let sound = true;
   let bodyOn = true;
@@ -239,6 +256,21 @@ export function createBarScene(options: SceneOptions): BarScene {
     drankBefore = localStorage.getItem(DRANK_KEY) === "1";
   } catch {}
   const confetti: Confetto[] = [];
+  // LC-024: the street in front of the pub, the entry walk, and the camera settling in the bar
+  let place: Place | null = null;
+  const street: StreetState = { door: 0, zoom: 0, reveal: 0 };
+  /** The street frame, for splitting it in two as the doorway opens up. */
+  let streetFrameC: HTMLCanvasElement | null = null;
+  /** The player's glass slides up onto the counter after the walk in (px below its place). */
+  let glassIn = 0;
+  let camZ = 0;
+  let vgA = 1;
+  let portalC: HTMLCanvasElement | null = null;
+  const streetArt = createStreetArt({
+    body: F_BODY,
+    neon: fontVar("--f-neon", "sans-serif"),
+    chalk: fontVar("--f-chalk", "cursive"),
+  });
 
   // ---------- patrons ----------
   const patrons: Patron[] = [
@@ -418,6 +450,7 @@ export function createBarScene(options: SceneOptions): BarScene {
         });
     roomC = null;
     barC = null;
+    streetArt.reset();
     void ready.then(rasterAll);
   }
 
@@ -901,24 +934,38 @@ export function createBarScene(options: SceneOptions): BarScene {
     ctx.restore();
   }
 
-  function drawBarWorld(t: number) {
+  /** The bar on the current canvas; as a street portal it has no camera, no glass in hand and no bubbles. */
+  function drawBarWorld(t: number, portal = false) {
     ctx.save();
-    const sway = Math.max(wobble, drunk * 2);
-    const wob = sway > 0 && !reduced ? Math.sin(t / 420) * sway * 0.03 : 0;
-    ctx.translate(cw / 2 + shake.x, ch / 2 + shake.y);
-    ctx.rotate(wob);
-    ctx.translate(-cw / 2, -ch / 2);
+    if (!portal) {
+      const sway = Math.max(wobble, drunk * 2);
+      const wob = sway > 0 && !reduced ? Math.sin(t / 420) * sway * 0.03 : 0;
+      ctx.translate(cw / 2 + shake.x, ch / 2 + shake.y);
+      ctx.rotate(wob);
+      const camS = 1 + camZ;
+      ctx.scale(camS, camS);
+      ctx.translate(-cw / 2, -ch / 2);
+    }
     drawRoom(t);
     drawWall(t);
     for (const p of patrons) drawPatron(p, t);
     drawBarTop(t);
     drawCounterProps(t);
+    if (portal) {
+      ctx.restore();
+      return;
+    }
     drawBubbles(t);
     if (primaryGlass && barMode === "ready" && !ownDone && mode === "idle") {
       const r = restGlass();
       drawHalo(ctx, r.x, r.y, r.h * 1.1, t);
     }
-    rimNow = drawMine(t);
+    if (glassIn > 0.5) {
+      ctx.save();
+      ctx.translate(0, glassIn);
+      rimNow = drawMine(t);
+      ctx.restore();
+    } else rimNow = drawMine(t);
     if (tier >= 5 && lift < 0.2) {
       const r = restGlass();
       drawCrown(ctx, r.x, r.y - r.h * 0.95, r.h * 0.22, t);
@@ -934,10 +981,205 @@ export function createBarScene(options: SceneOptions): BarScene {
       Math.hypot(Math.max(cw, fw * 0.7), ch) * 0.62
     );
     vg.addColorStop(0, "rgba(8,2,6,0)");
-    vg.addColorStop(1, "rgba(8,2,6,0.55)");
+    vg.addColorStop(1, `rgba(8,2,6,${(0.55 * vgA).toFixed(3)})`);
     ctx.fillStyle = vg;
     ctx.fillRect(-ox, 0, fw, ch);
-    drawTierWash(ctx, Math.max(0, tier), -ox, fw, ch);
+    drawTierWash(ctx, Math.max(0, tier), -ox, fw, ch, vgA);
+  }
+
+  // ---------- LC-024: the street ----------
+  /** The live bar at the full view size (the long bar fills wide screens), for windows and the door. */
+  function renderPortal(t: number) {
+    const w = Math.ceil(fw * dpr);
+    const h = Math.ceil(ch * dpr);
+    if (!portalC || portalC.width !== w || portalC.height !== h) {
+      portalC = document.createElement("canvas");
+      portalC.width = w;
+      portalC.height = h;
+    }
+    const main = ctx;
+    ctx = portalC.getContext("2d") as Ctx;
+    ctx.setTransform(dpr, 0, 0, dpr, dpr * ox, 0);
+    drawBarWorld(t, true);
+    ctx = main;
+  }
+  /**
+   * The street; while entering, the doorway opens up to the whole view. The street falls back into the
+   * dark, and the bar seen through the door grows from its doorway size to its own size: the street
+   * itself barely zooms (user, 13 Nov).
+   */
+  function drawStreetFrame(t: number) {
+    renderPortal(t);
+    const portal = portalC as HTMLCanvasElement;
+    ctx.fillStyle = "#07060d";
+    ctx.fillRect(-ox, 0, fw, ch);
+    const e = street.reveal;
+    if (e <= 0) {
+      streetArt.draw(ctx, t, cw, ch, dpr, portal, street, ox);
+      return;
+    }
+    const w = Math.ceil(fw * dpr);
+    const h = Math.ceil(ch * dpr);
+    if (!streetFrameC || streetFrameC.width !== w || streetFrameC.height !== h) {
+      streetFrameC = document.createElement("canvas");
+      streetFrameC.width = w;
+      streetFrameC.height = h;
+    }
+    const sx = streetFrameC.getContext("2d") as Ctx;
+    sx.setTransform(dpr, 0, 0, dpr, dpr * ox, 0);
+    sx.fillStyle = "#07060d";
+    sx.fillRect(-ox, 0, fw, ch);
+    streetArt.draw(sx, t, cw, ch, dpr, portal, street, ox);
+    const D = doorRect(cw, ch, fw);
+    const z = 1 + STREET_PUSH * street.zoom;
+    const A = { x: D.x + D.w / 2, y: D.y + D.h / 2 };
+    // the street falls back a touch into the dark around the opening
+    const back = 1 + 0.06 * e;
+    ctx.save();
+    ctx.translate(A.x, A.y);
+    ctx.scale(back, back);
+    ctx.translate(-A.x, -A.y);
+    ctx.drawImage(streetFrameC, -ox, 0, fw, ch);
+    ctx.restore();
+    ctx.fillStyle = `rgba(4,3,8,${(0.75 * e).toFixed(3)})`;
+    ctx.fillRect(-ox, 0, fw, ch);
+    // the doorway, pushed with the camera, grows to the whole view
+    const door = { x: A.x - (D.w * z) / 2, y: A.y - (D.h * z) / 2, w: D.w * z, h: D.h * z };
+    const m = {
+      x: lerp(door.x, -ox, e),
+      y: lerp(door.y, 0, e),
+      w: lerp(door.w, fw, e),
+      h: lerp(door.h, ch, e),
+    };
+    const radius = lerp(D.w * z * 0.05, 0, e);
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(m.x, m.y, m.w, m.h, radius);
+    ctx.clip();
+    const k = lerp(D.cover * z, 1, e);
+    ctx.translate(lerp(A.x, cw / 2, e), lerp(A.y, ch / 2, e));
+    ctx.scale(k, k);
+    ctx.translate(-cw / 2, -ch / 2);
+    ctx.drawImage(portal, -ox, 0, fw, ch);
+    ctx.restore();
+    // warm light round the opening, fading as it reaches the edges
+    if (e < 0.98) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,214,150,${(0.85 * (1 - e)).toFixed(3)})`;
+      ctx.shadowColor = "#ffb84a";
+      ctx.shadowBlur = 36;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(m.x, m.y, m.w, m.h, radius);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  function doorBell() {
+    if (!audio || !sound) return;
+    const t0 = audio.currentTime;
+    [0, 0.17].forEach((d, j) => {
+      [1, 2.4, 3.9].forEach((m, i) => {
+        if (!audio) return;
+        const o = audio.createOscillator();
+        o.frequency.value = 1650 * m * (1 + j * 0.03);
+        const g = audio.createGain();
+        adsr(g.gain, t0 + d, 0.09 / (i + 1), 0.004, 0.01, 0.7 - i * 0.15);
+        o.connect(g).connect(out(0));
+        o.start(t0 + d);
+        o.stop(t0 + d + 0.9);
+      });
+    });
+  }
+  function crowdSwell() {
+    if (!audio || !sound) return;
+    const t0 = audio.currentTime;
+    const n = noiseSrc();
+    const f = audio.createBiquadFilter();
+    f.type = "bandpass";
+    f.frequency.value = 650;
+    f.Q.value = 0.8;
+    const am = audio.createGain();
+    am.gain.value = 0.6;
+    lfo(5.3, 0.3, am.gain, t0, t0 + 3.3);
+    lfo(2.2, 0.2, am.gain, t0, t0 + 3.3);
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.14, t0 + 0.9);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.2);
+    n.connect(f).connect(am).connect(g).connect(out(0));
+    n.start(t0, Math.random());
+    n.stop(t0 + 3.3);
+  }
+  function placeClass() {
+    root.classList.toggle("is-street", place === "street");
+  }
+  /** The door opens, the camera walks into the doorway, then settles at the bar: no cut. */
+  function enterBar() {
+    root.classList.add("is-entering");
+    ensureAudio();
+    doorBell();
+    later(crowdSwell, 250);
+    const arrive = () => {
+      place = "bar";
+      root.classList.remove("is-entering");
+      placeClass();
+      street.door = 0;
+      street.zoom = 0;
+      mode = "idle";
+      tipText(idleTip());
+      const hi = ["New face!", "Come in!", "Sit with us", "First time here?"];
+      patrons.forEach((p, i) => {
+        later(
+          () => {
+            p.face = "big";
+            p.faceUntil = performance.now() + 1400;
+            talk(p, at(hi, i), 1900);
+          },
+          600 + i * 260
+        );
+      });
+      later(() => say("Welcome. Warm-up first: your pint is poured soon", "bartender"), 2000);
+    };
+    if (reduced) {
+      arrive();
+      options.onEntered?.();
+      return;
+    }
+    gsap
+      .timeline()
+      .to(street, { door: 1, duration: 0.85, ease: "power2.out" })
+      .to(street, { zoom: 1, duration: 1.7, ease: "sine.inOut" }, 0)
+      .to(street, { reveal: 1, duration: 1.15, ease: "power3.inOut" }, 0.6)
+      .call(() => {
+        camZ = 0;
+        vgA = 0;
+        glassIn = ch * 0.35;
+        arrive();
+        street.reveal = 0;
+        // the bar settles into its own light; the bartender slides the glass onto the counter
+        const o = { v: 0 };
+        gsap.to(o, {
+          v: 1,
+          duration: 0.8,
+          ease: "sine.out",
+          onUpdate: () => {
+            vgA = o.v;
+          },
+        });
+        const g = { y: glassIn };
+        gsap.to(g, {
+          y: 0,
+          duration: 0.7,
+          delay: 0.25,
+          ease: "back.out(1.6)",
+          onUpdate: () => {
+            glassIn = g.y;
+          },
+          onComplete: () => thud(0.35, 0),
+        });
+        later(() => options.onEntered?.(), 1000);
+      });
   }
 
   // ---------- LC-028: tier props, clock, goal rail, focus ----------
@@ -989,6 +1231,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (!ghost) return;
     const now = performance.now();
     const show =
+      place === "bar" &&
       primaryGlass &&
       barMode === "ready" &&
       !ownDone &&
@@ -1806,6 +2049,15 @@ export function createBarScene(options: SceneOptions): BarScene {
     }
     if (cw > 0) {
       ctx.setTransform(dpr, 0, 0, dpr, dpr * ox, 0);
+      if (place === "street") {
+        drawStreetFrame(t);
+        if (lastFilter !== "") {
+          lastFilter = "";
+          cv.style.filter = "";
+        }
+        raf = requestAnimationFrame(frame);
+        return;
+      }
       drawBarWorld(t);
       drawFlood(t, rimNow);
       drawDrops();
@@ -1816,7 +2068,13 @@ export function createBarScene(options: SceneOptions): BarScene {
         riskOn = risk;
         if (mode === "idle") tipText(idleTip());
       }
-      const filter = gradeFilter(Math.max(0, tier), reduced ? 0 : riskK, wobble > 0 && !reduced ? wobble * 0.4 : 0, t);
+      const filter = gradeFilter(
+        Math.max(0, tier),
+        reduced ? 0 : riskK,
+        wobble > 0 && !reduced ? wobble * 0.4 : 0,
+        t,
+        vgA
+      );
       if (filter !== lastFilter) {
         lastFilter = filter;
         cv.style.filter = filter;
@@ -2009,7 +2267,7 @@ export function createBarScene(options: SceneOptions): BarScene {
         if (outcome) {
           ownDone = true;
           bodyAfterMine();
-          say(lineText ?? "Bottoms up! Counted");
+          say(lineText ?? "Bottoms up! Counted", undefined, "good");
           if (outcome.n === outcome.goal) goalReached();
           crowdPraise();
           cracked = 0;
@@ -2111,7 +2369,7 @@ export function createBarScene(options: SceneOptions): BarScene {
         { filter: "brightness(1.8)", yoyo: true, repeat: 5, duration: 0.12, delay: 0.2 }
       );
     }
-    later(() => say(pick(LINES.goal)), 300);
+    later(() => say(pick(LINES.goal), undefined, "good"), 300);
     patrons.forEach((p, i) => {
       later(
         () => {
@@ -2158,10 +2416,10 @@ export function createBarScene(options: SceneOptions): BarScene {
   function onPointerDown(e: PointerEvent) {
     ensureAudio();
     idleSince = performance.now();
-    if (mode !== "idle") return;
+    if (place !== "bar" || mode !== "idle") return;
     const refuse = refuseLine();
     if (refuse) {
-      say(refuse, "bartender");
+      say(refuse, "bartender", "warn");
       return;
     }
     const p = local(e);
@@ -2184,13 +2442,13 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (mode === "hold") {
       liftTarget = 0;
       if (lift > 0.5) {
-        say(pick(LINES.notMouth));
+        say(pick(LINES.notMouth), undefined, "warn");
         crowdGroan();
       }
     } else if (mode === "drink") {
       mode = "hold";
       liftTarget = 0;
-      say(pick(LINES.notFinished));
+      say(pick(LINES.notFinished), undefined, "warn");
       crowdGroan();
       const o = { f: flood };
       gsap.to(o, {
@@ -2214,10 +2472,10 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (e.repeat) return;
     ensureAudio();
     idleSince = performance.now();
-    if (mode !== "idle") return;
+    if (place !== "bar" || mode !== "idle") return;
     const refuse = refuseLine();
     if (refuse) {
-      say(refuse, "bartender");
+      say(refuse, "bartender", "warn");
       return;
     }
     mode = "hold";
@@ -2566,10 +2824,13 @@ export function createBarScene(options: SceneOptions): BarScene {
 
   // ---------- text ----------
   let sayTimer: ReturnType<typeof setTimeout> | undefined;
-  function say(text: string, who?: string) {
+  function say(text: string, who?: string, tone: SayTone = "info") {
+    sayEl.dataset.tone = tone;
+    sayEl.setAttribute("role", tone === "error" ? "alert" : "status");
     sayEl.replaceChildren();
     if (who) {
       const s = document.createElement("small");
+      s.className = "lc-bar-say-who";
       s.textContent = who;
       sayEl.appendChild(s);
     }
@@ -2580,10 +2841,29 @@ export function createBarScene(options: SceneOptions): BarScene {
       { opacity: 0, y: reduced ? 0 : 8, scale: reduced ? 1 : 0.95 },
       { opacity: 1, y: 0, scale: 1, duration: 0.25, ease: "back.out(2)" }
     );
+    if (tone === "error" && !reduced) {
+      gsap.fromTo(
+        sayEl,
+        { x: 0 },
+        {
+          keyframes: [
+            { x: -8, duration: 0.06 },
+            { x: 7, duration: 0.06 },
+            { x: -5, duration: 0.06 },
+            { x: 3, duration: 0.06 },
+            { x: 0, duration: 0.08 },
+          ],
+          delay: 0.2,
+        }
+      );
+    }
     if (sayTimer) clearTimeout(sayTimer);
-    sayTimer = setTimeout(() => {
-      if (!destroyed) gsap.to(sayEl, { opacity: 0, duration: 0.4 });
-    }, 3400);
+    sayTimer = setTimeout(
+      () => {
+        if (!destroyed) gsap.to(sayEl, { opacity: 0, duration: 0.4 });
+      },
+      tone === "error" ? 5500 : 3400
+    );
     lastHint = performance.now();
   }
   function tipText(text: string) {
@@ -2606,6 +2886,13 @@ export function createBarScene(options: SceneOptions): BarScene {
       r: 1 + Math.random() * 1.6,
     });
   resize();
+  // Fade the canvas in once the art is ready (LC-024); repaint the chalk board when its font arrives.
+  void ready.then(() => {
+    if (!destroyed) root.classList.add("is-ready");
+  });
+  void document.fonts?.ready.then(() => {
+    if (!destroyed) streetArt.reset();
+  });
   const observer = new ResizeObserver(resize);
   observer.observe(root);
   root.addEventListener("pointerdown", onPointerDown);
@@ -2678,14 +2965,14 @@ export function createBarScene(options: SceneOptions): BarScene {
     checkInSucceeded(outcome, lineText) {
       if (mode !== "wait") {
         ownDone = true;
-        say(lineText);
+        say(lineText, undefined, "good");
         return;
       }
       slam(outcome, lineText);
     },
     checkInFailed(lineText) {
       if (mode !== "wait") {
-        say(lineText, "bartender");
+        say(lineText, "bartender", "error");
         return;
       }
       mode = "lower";
@@ -2698,7 +2985,7 @@ export function createBarScene(options: SceneOptions): BarScene {
           lift = liftTarget = s.l;
         },
         onComplete: () => {
-          say(lineText, "bartender");
+          say(lineText, "bartender", "error");
           crowdGroan();
           later(() => {
             vol = barMode === "warmup" ? 0 : 1;
@@ -2718,7 +3005,7 @@ export function createBarScene(options: SceneOptions): BarScene {
       const rose = !first && next > tier;
       tier = next;
       if (first) {
-        later(() => say(at(LINES.tierGreet, next), "bartender"), 900);
+        if (place !== "street") later(() => say(at(LINES.tierGreet, next), "bartender"), 900);
       } else if (rose) {
         later(() => {
           say(at(LINES.tierUp, next), "bartender");
@@ -2740,13 +3027,32 @@ export function createBarScene(options: SceneOptions): BarScene {
       cracked = 1;
       thud(0.4, 0);
       crowdGroan();
-      later(() => say(`Streak ${previous} is gone. Start a new one tonight`, "bartender"), 400);
+      later(() => say(`Streak ${previous} is gone. Start a new one tonight`, "bartender", "error"), 400);
     },
     focus(target) {
       focusOn = { target, until: performance.now() + 2200 };
     },
     setPrimary(glass) {
       primaryGlass = glass;
+    },
+    setPlace(next) {
+      if (next === place) return;
+      const first = place === null;
+      if (first || next === "street") {
+        gsap.killTweensOf(street);
+        place = next;
+        street.door = 0;
+        street.zoom = 0;
+        street.reveal = 0;
+        camZ = 0;
+        vgA = 1;
+        placeClass();
+        return;
+      }
+      enterBar();
+    },
+    setBoard(board) {
+      streetArt.setBoard(board);
     },
     destroy() {
       destroyed = true;
@@ -2764,7 +3070,7 @@ export function createBarScene(options: SceneOptions): BarScene {
       root.removeEventListener("keyup", onKeyUp);
       bellEl.removeEventListener("pointerdown", stop);
       bellEl.removeEventListener("click", onBell);
-      gsap.killTweensOf([shake, sayEl, bangEl, bellEl, signEl, ...patrons, ...labels]);
+      gsap.killTweensOf([shake, sayEl, bangEl, bellEl, signEl, street, ...patrons, ...labels]);
       if (audio) void audio.close().catch(() => {});
       audio = null;
     },

@@ -20,9 +20,14 @@ const GRADE: readonly (readonly [number, number])[] = [
   [1.08, 1.22],
 ];
 
-/** CSS filter for the canvas: tier grade, the at-risk dimming, and the extra-drinks blur. */
-export function gradeFilter(tier: number, risk: number, blurPx: number, t: number): string {
-  const [b0, s0] = GRADE[Math.max(0, Math.min(GRADE.length - 1, tier))] as readonly [number, number];
+/**
+ * CSS filter for the canvas: tier grade, the at-risk dimming, and the extra-drinks blur. `strength`
+ * (0 … 1) fades the grade in, so the bar warms or cools gently after the walk in from the street.
+ */
+export function gradeFilter(tier: number, risk: number, blurPx: number, t: number, strength = 1): string {
+  const [g0, g1] = GRADE[Math.max(0, Math.min(GRADE.length - 1, tier))] as readonly [number, number];
+  const b0 = 1 + (g0 - 1) * strength;
+  const s0 = 1 + (g1 - 1) * strength;
   const pulse = risk > 0 ? 1 - risk * (0.26 + 0.08 * Math.sin(t / 260)) : 1;
   const b = (b0 * pulse).toFixed(3);
   const s = (s0 * (risk > 0 ? 1 - risk * 0.35 : 1)).toFixed(3);
@@ -30,7 +35,7 @@ export function gradeFilter(tier: number, risk: number, blurPx: number, t: numbe
 }
 
 /** A colour wash over the whole room: cold for a new face, amber, neon, then gold. */
-export function drawTierWash(ctx: Ctx, tier: number, x: number, w: number, h: number) {
+export function drawTierWash(ctx: Ctx, tier: number, x: number, w: number, h: number, strength = 1) {
   const wash: readonly (readonly [string, number, GlobalCompositeOperation] | null)[] = [
     ["#20304a", 0.3, "multiply"],
     null,
@@ -43,7 +48,7 @@ export function drawTierWash(ctx: Ctx, tier: number, x: number, w: number, h: nu
   if (!k) return;
   ctx.save();
   ctx.globalCompositeOperation = k[2];
-  ctx.globalAlpha = k[1];
+  ctx.globalAlpha = k[1] * strength;
   ctx.fillStyle = k[0];
   ctx.fillRect(x, 0, w, h);
   ctx.restore();

@@ -9,6 +9,7 @@
   --f-neon: var(--font-tilt-neon), var(--font-golos), sans-serif;
   --f-body: var(--font-golos), system-ui, sans-serif;
   --f-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --f-chalk: var(--font-caveat), "Marker Felt", cursive;
   color-scheme: dark;
   color: var(--fg);
   font-family: var(--f-body);
@@ -107,31 +108,78 @@
 .lc-bar-chip b {
   color: var(--amber);
 }
+/* The bartender talks in a solid bubble, readable over any part of the scene; the tone colours it:
+   good news green, a nudge amber, an error red with a mark (LC-028, user 13 Nov). */
 .lc-bar-say {
   position: absolute;
-  left: 5%;
-  right: 5%;
+  left: 0;
+  right: 0;
   top: 17.5%;
+  width: fit-content;
+  max-width: min(90%, 360px);
+  margin: 0 auto;
+  padding: 9px 16px 11px;
+  border-radius: 16px;
+  border: 1px solid #ffffff2e;
+  background: rgba(20, 8, 18, 0.9);
+  box-shadow: 0 10px 28px #000b;
+  backdrop-filter: blur(4px);
   text-align: center;
   font-weight: 900;
   font-size: 16px;
   line-height: 1.3;
   color: #fff;
-  text-shadow:
-    0 2px 12px #000,
-    0 0 2px #000;
   opacity: 0;
   pointer-events: none;
   z-index: 3;
 }
-.lc-bar-say small {
+.lc-bar-say-who {
   display: block;
+  margin-bottom: 2px;
   font-family: var(--f-mono);
   font-weight: 700;
   font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--amber);
   text-transform: uppercase;
+}
+.lc-bar-say[data-tone="good"] {
+  border-color: #8fe3a8aa;
+  box-shadow:
+    0 0 0 3px #8fe3a822,
+    0 10px 28px #000b;
+}
+.lc-bar-say[data-tone="good"] .lc-bar-say-who {
+  color: #8fe3a8;
+}
+.lc-bar-say[data-tone="warn"] {
+  border-color: #ffb84acc;
+  background: rgba(42, 24, 8, 0.94);
+}
+.lc-bar-say[data-tone="error"] {
+  border: 2px solid #ff4d3d;
+  background: rgba(58, 12, 16, 0.96);
+  box-shadow:
+    0 0 0 4px #ff4d3d33,
+    0 10px 28px #000c;
+}
+.lc-bar-say[data-tone="error"] .lc-bar-say-who {
+  color: #ff8a7a;
+}
+.lc-bar-say[data-tone="error"]::before {
+  content: "!";
+  display: inline-grid;
+  place-items: center;
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #3a0c10;
+  background: #ff4d3d;
+  color: #fff;
+  font-size: 14px;
 }
 .lc-bar-bang {
   position: absolute;
@@ -487,6 +535,32 @@
   font-size: 13px;
   text-align: center;
   z-index: 5;
+}
+/* A failed wallet or contract call: red, with a mark, never mistaken for a note. */
+.lc-toast.is-error {
+  padding-left: 38px;
+  border: 2px solid #ff4d3d;
+  background: #3a0c10f2;
+  box-shadow:
+    0 0 0 4px #ff4d3d2e,
+    0 10px 28px #000b;
+  font-size: 14px;
+  font-weight: 700;
+}
+.lc-toast.is-error::before {
+  content: "!";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ff4d3d;
+  color: #fff;
+  font-weight: 900;
 }
 
 /* Sheets: bottom sheet on phones, side drawer on desktops. */
@@ -1158,4 +1232,318 @@
   .lc-hall .lc-dock-btn.is-primary {
     animation: none;
   }
+}
+
+/* LC-024: on the street the bar's own controls are out of reach. */
+.lc-bar-scene.is-street .lc-bar-bell,
+.lc-bar-scene.is-street .lc-bar-tip,
+.lc-bar-scene.is-street .lc-bar-ghost,
+.lc-bar-scene.is-street .lc-bar-hud {
+  opacity: 0;
+  pointer-events: none;
+}
+.lc-bar-scene.is-entering .lc-bar-sign {
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+/* ---------- LC-024: loading, the street gate, and how the hall comes in ---------- */
+/* Loading: the neon sign lights up letter by letter, a pint fills. */
+.lc-loading {
+  min-height: 100svh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  padding: 24px;
+  text-align: center;
+}
+.lc-loading-sign {
+  font-family: var(--font-tilt-neon), sans-serif;
+  font-size: clamp(40px, 12vw, 72px);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: #ffe0f2;
+}
+.lc-loading-sign span {
+  display: inline-block;
+  opacity: 0.12;
+  text-shadow: none;
+  animation: lc-ignite 0.9s steps(1) calc(0.3s + var(--i) * 0.11s) forwards;
+}
+@keyframes lc-ignite {
+  0% {
+    opacity: 0.6;
+    text-shadow:
+      0 0 4px #ff4fb8,
+      0 0 14px #ff4fb8;
+  }
+  20% {
+    opacity: 0.15;
+    text-shadow: none;
+  }
+  35%,
+  100% {
+    opacity: 1;
+    text-shadow:
+      0 0 4px #ff4fb8,
+      0 0 14px #ff4fb8,
+      0 0 34px #ff2d9e;
+  }
+}
+.lc-loading-pint {
+  position: relative;
+  width: 34px;
+  height: 52px;
+  clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%);
+  background: #ffffff14;
+  border-top: 3px solid #ffffff30;
+}
+.lc-loading-fill {
+  position: absolute;
+  inset: auto 0 0;
+  height: 0;
+  background: linear-gradient(#fff6e6 0 7px, #f0a030 7px);
+  animation: lc-pour 1.8s ease-in-out infinite;
+}
+@keyframes lc-pour {
+  0% {
+    height: 0;
+  }
+  70%,
+  85% {
+    height: 100%;
+  }
+  100% {
+    height: 100%;
+    opacity: 0;
+  }
+}
+.lc-loading-text {
+  margin: 0;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #b39aa8;
+}
+.lc-loading-error {
+  max-width: 28rem;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid #ff4d3d88;
+  background: #ff4d3d1a;
+  font-size: 13px;
+}
+
+/* The street gate: one note, one big button, over the pavement. */
+.lc-hall-stage {
+  position: relative;
+}
+.lc-gate {
+  position: absolute;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(92%, 420px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 4;
+  text-align: center;
+  animation: lc-in-up 0.6s 0.5s backwards;
+}
+.lc-gate-note {
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 12px;
+  border: 1px solid #ffffff1f;
+  background: rgba(14, 6, 12, 0.8);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.lc-gate-note .lc-gate-em {
+  color: #ffb84a;
+}
+.lc-gate-btn {
+  min-height: 52px;
+  padding: 12px 26px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffd27a, #ffb84a);
+  color: #1a0d16;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 0 #ffb84a88,
+    0 8px 24px #0009;
+  animation: lc-primary-btn 1.6s ease-out infinite;
+}
+.lc-gate-btn:focus-visible {
+  outline: 3px solid #fff3c4;
+  outline-offset: 3px;
+}
+.lc-gate-btn:disabled {
+  cursor: default;
+  background: #3a2633;
+  color: #c9aebd;
+  animation: none;
+}
+.lc-gate-btn[aria-busy="true"] {
+  background: #ffb84a;
+  color: #1a0d16;
+}
+.lc-gate-dots::after {
+  content: "";
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: lc-dots 1.2s steps(4) infinite;
+}
+@keyframes lc-dots {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+}
+@keyframes lc-primary-btn {
+  to {
+    box-shadow:
+      0 0 0 14px #ffb84a00,
+      0 8px 24px #0009;
+  }
+}
+.lc-hall.is-street .lc-toast {
+  bottom: calc(env(safe-area-inset-bottom) + 130px);
+}
+
+/* The hall comes in piece by piece; the scene fades in once its art is ready. */
+/* The HUD and its account menu stay above the side blocks (the menu pops over the right one). */
+.lc-hud-in {
+  position: relative;
+  z-index: 10;
+  animation: lc-in-down 0.55s 0.1s backwards;
+}
+.lc-hall .lc-dock {
+  animation: lc-in-up 0.55s 0.25s backwards;
+}
+.lc-hall .lc-side-left {
+  animation: lc-in-left 0.6s 0.35s backwards;
+}
+.lc-hall .lc-side-right {
+  animation: lc-in-right 0.6s 0.45s backwards;
+}
+.lc-bar-scene canvas {
+  opacity: 0;
+  transition: opacity 0.7s ease-out;
+}
+.lc-bar-scene.is-ready canvas {
+  opacity: 1;
+}
+.lc-hall-alert {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: #3a0f12ee;
+  border: 1px solid #ff4d3d88;
+  color: #f6e8dc;
+  font-size: 13px;
+}
+@keyframes lc-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+@keyframes lc-in-up {
+  from {
+    opacity: 0;
+    transform: translate(var(--tx, 0), 18px);
+  }
+}
+@keyframes lc-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+@keyframes lc-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-hud-in,
+  .lc-hall .lc-dock,
+  .lc-hall .lc-side-left,
+  .lc-hall .lc-side-right,
+  .lc-gate,
+  .lc-gate-btn,
+  .lc-loading-fill {
+    animation: none;
+  }
+  .lc-loading-sign span {
+    animation: none;
+    opacity: 1;
+  }
+}
+/* The street has no dock: the scene takes its row. */
+.lc-hall.is-street {
+  --stage-h: calc(100svh - var(--hud-h));
+  grid-template-rows: var(--hud-h) minmax(0, 1fr) 0;
+}
+/* Outside, the sign is the pub's own neon, whatever the visitor's tier. */
+.lc-bar[data-tier] .lc-bar-scene.is-street .lc-bar-sign {
+  color: #ffe0f2;
+  text-shadow:
+    0 0 4px var(--neon),
+    0 0 14px var(--neon),
+    0 0 34px #ff2d9e;
+  animation: none;
+}
+
+/* Desktop street (LC-024): the scene fills the window; after the entry walk it closes in to the
+   column (clip only, the canvas keeps its size), then the hall switches to its three columns. The
+   column is the same portrait (stage height × 0.62, centred), so the switch has no jump. */
+@media (min-width: 1100px) {
+  .lc-hall.is-street {
+    --stage-h: calc(100svh - var(--hud-h) - 16px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--hud-h) minmax(0, 1fr);
+    grid-template-areas:
+      "hud"
+      "stage";
+    padding: 0 0 16px;
+  }
+  .lc-hall.is-street .lc-bar-scene {
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    clip-path: inset(0 0 0 0 round 0);
+    transition: clip-path 0.9s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  .lc-hall.is-street.is-narrowing .lc-bar-scene {
+    clip-path: inset(0 calc(50% - var(--stage-h) * 0.31) 0 calc(50% - var(--stage-h) * 0.31) round 22px);
+  }
+}
+.lc-gate {
+  --tx: -50%;
 }

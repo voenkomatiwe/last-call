@@ -55,12 +55,19 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
+/** A note under the scene after a wallet or contract call; errors are shown red. */
+export interface HallMessage {
+  readonly text: string;
+  readonly tone: "info" | "error";
+}
+
 interface Props {
   readonly data: GameData;
   readonly kickable: readonly string[];
-  readonly accountId: string;
+  /** `null` on the street before a wallet is connected. */
+  readonly accountId: string | null;
   readonly busy: string | undefined;
-  readonly message: string | undefined;
+  readonly message: HallMessage | undefined;
   readonly quick: QuickCheckIn;
   /** The bar scene. */
   readonly stage: ReactNode;
@@ -70,63 +77,96 @@ interface Props {
   readonly onSend: Send;
   readonly onEnableQuick: () => void;
   readonly onDisconnect: () => void;
+  /**
+   * The street (LC-024): no dock, no side blocks, no personal numbers; on desktops the scene fills the
+   * window. The stage keeps its place in the tree, so the scene lives on through the entry walk.
+   */
+  readonly street?: boolean;
+  /** Desktop, after the entry walk: the full-window scene closes in to the column. */
+  readonly narrowing?: boolean;
+  /** The street gate (LC-024), shown over the scene. */
+  readonly gate?: ReactNode;
 }
 
 export function BarHall(props: Props) {
-  const { data, kickable, accountId, settings, onDisconnect, message } = props;
+  const { data, kickable, accountId, settings, onDisconnect, message, gate, street = false, narrowing = false } = props;
   const [sheet, setSheet] = useState<SheetId | null>(null);
   const member = data.account?.member;
   const claimable = member?.pendingClaimable ?? 0n;
   const primary = hallPrimary(data);
   const tabGlows = primary === "claim" || primary === "settle";
+  const inside = !street;
 
   return (
-    <div className="lc-hall" data-tier={streakTier(member?.currentPersonalStreak ?? 0).id}>
-      <Hud data={data} accountId={accountId} settings={settings} onDisconnect={onDisconnect} />
-      <div className="lc-hall-stage">{props.stage}</div>
+    <div
+      className={`lc-hall${inside ? "" : " is-street"}${narrowing ? " is-narrowing" : ""}`}
+      data-tier={streakTier(member?.currentPersonalStreak ?? 0).id}
+    >
+      <Hud data={data} accountId={accountId} settings={settings} onDisconnect={onDisconnect} street={!inside} />
+      <div className="lc-hall-stage">
+        {props.stage}
+        {gate}
+      </div>
       {message && (
-        <p className="lc-toast" role="status">
-          {message}
+        <p
+          className={`lc-toast${message.tone === "error" ? " is-error" : ""}`}
+          role={message.tone === "error" ? "alert" : "status"}
+        >
+          {message.text}
         </p>
       )}
       {/* Desktop: the blocks stand beside the scene; phones and tablets open them as sheets. */}
-      <aside className="lc-side lc-side-left" aria-label="Past nights">
-        <h2>Past nights</h2>
-        <NightsSheet {...props} />
-      </aside>
-      <aside className="lc-side lc-side-right" aria-label="Your tab">
-        <h2>Your tab</h2>
-        <TabSheet {...props} />
-        <h2>No-shows</h2>
-        <NoShowsSheet {...props} />
-      </aside>
-      <nav className="lc-dock" aria-label="Bar menu">
-        <button type="button" className={`lc-dock-btn${tabGlows ? " is-primary" : ""}`} onClick={() => setSheet("tab")}>
-          <Icon name="bill" /> Your tab
-          {claimable > 0n && <b className="lc-badge">+{shortLast(claimable)}</b>}
-        </button>
-        <button type="button" className="lc-dock-btn" onClick={() => setSheet("nights")}>
-          <Icon name="moonStars" /> Nights
-          {data.game.state.pendingHeroDays.length > 0 && (
-            <b className="lc-badge">
-              <Icon name="cupStar" />
-            </b>
-          )}
-        </button>
-        <button type="button" className="lc-dock-btn" onClick={() => setSheet("noshows")}>
-          <Icon name="ghost" /> No-shows
-          {kickable.length > 0 && <b className="lc-badge">{kickable.length}</b>}
-        </button>
-      </nav>
-      <Sheet open={sheet === "tab"} title="Your tab" onClose={() => setSheet(null)}>
-        <TabSheet {...props} />
-      </Sheet>
-      <Sheet open={sheet === "nights"} title="Past nights" onClose={() => setSheet(null)}>
-        <NightsSheet {...props} />
-      </Sheet>
-      <Sheet open={sheet === "noshows"} title="No-shows" onClose={() => setSheet(null)}>
-        <NoShowsSheet {...props} />
-      </Sheet>
+      {inside && (
+        <aside className="lc-side lc-side-left" aria-label="Past nights">
+          <h2>Past nights</h2>
+          <NightsSheet {...props} />
+        </aside>
+      )}
+      {inside && (
+        <aside className="lc-side lc-side-right" aria-label="Your tab">
+          <h2>Your tab</h2>
+          <TabSheet {...props} />
+          <h2>No-shows</h2>
+          <NoShowsSheet {...props} />
+        </aside>
+      )}
+      {inside && (
+        <nav className="lc-dock" aria-label="Bar menu">
+          <button
+            type="button"
+            className={`lc-dock-btn${tabGlows ? " is-primary" : ""}`}
+            onClick={() => setSheet("tab")}
+          >
+            <Icon name="bill" /> Your tab
+            {claimable > 0n && <b className="lc-badge">+{shortLast(claimable)}</b>}
+          </button>
+          <button type="button" className="lc-dock-btn" onClick={() => setSheet("nights")}>
+            <Icon name="moonStars" /> Nights
+            {data.game.state.pendingHeroDays.length > 0 && (
+              <b className="lc-badge">
+                <Icon name="cupStar" />
+              </b>
+            )}
+          </button>
+          <button type="button" className="lc-dock-btn" onClick={() => setSheet("noshows")}>
+            <Icon name="ghost" /> No-shows
+            {kickable.length > 0 && <b className="lc-badge">{kickable.length}</b>}
+          </button>
+        </nav>
+      )}
+      {inside && (
+        <>
+          <Sheet open={sheet === "tab"} title="Your tab" onClose={() => setSheet(null)}>
+            <TabSheet {...props} />
+          </Sheet>
+          <Sheet open={sheet === "nights"} title="Past nights" onClose={() => setSheet(null)}>
+            <NightsSheet {...props} />
+          </Sheet>
+          <Sheet open={sheet === "noshows"} title="No-shows" onClose={() => setSheet(null)}>
+            <NoShowsSheet {...props} />
+          </Sheet>
+        </>
+      )}
     </div>
   );
 }
@@ -136,11 +176,14 @@ function Hud({
   accountId,
   settings,
   onDisconnect,
+  street,
 }: {
   readonly data: GameData;
-  readonly accountId: string;
+  readonly accountId: string | null;
   readonly settings: BarSettings;
   readonly onDisconnect: () => void;
+  /** Outside: no personal streak chip. */
+  readonly street: boolean;
 }) {
   const now = useNow(1_000);
   const { state } = data.game;
@@ -179,7 +222,7 @@ function Hud({
           : { cls: " is-risk", title: "Not checked in tonight: drink to keep the streak", small: "drink" };
 
   return (
-    <header className="lc-hud">
+    <header className="lc-hud lc-hud-in">
       <div className="lc-hud-stats">
         <button
           type="button"
@@ -198,10 +241,17 @@ function Hud({
           <Icon name="users" /> <b>{count}</b>
           {toBell !== null && <small>/{day.goal}</small>}
         </button>
-        <button type="button" className={`lc-stat${fire.cls}`} title={fire.title} onClick={() => focusInBar("streak")}>
-          <Icon name="fire" /> <b>{streak}</b>
-          <small>{fire.small}</small>
-        </button>
+        {!street && (
+          <button
+            type="button"
+            className={`lc-stat${fire.cls}`}
+            title={fire.title}
+            onClick={() => focusInBar("streak")}
+          >
+            <Icon name="fire" /> <b>{streak}</b>
+            <small>{fire.small}</small>
+          </button>
+        )}
         <button
           type="button"
           className="lc-stat lc-stat-pot"
@@ -212,7 +262,7 @@ function Hud({
           <small>{multiplier}</small>
         </button>
       </div>
-      <AccountMenu accountId={accountId} settings={settings} onDisconnect={onDisconnect} />
+      {accountId ? <AccountMenu accountId={accountId} settings={settings} onDisconnect={onDisconnect} /> : <span />}
     </header>
   );
 }
@@ -500,7 +550,7 @@ function Switch({
   );
 }
 
-/** The wallet chip: settings (sound, burps, boring mode) and a confirmed log-out. */
+/** The wallet chip: sound settings and a confirmed log-out. */
 function AccountMenu({
   accountId,
   settings,
@@ -549,11 +599,6 @@ function AccountMenu({
         <div className="lc-menu-pop" id="lc-menu-pop">
           <Switch icon="volume" label="Sound" on={settings.sound} onChange={settings.setSound} />
           <Switch icon="wind" label="Burps & farts" on={settings.bodySounds} onChange={settings.setBodySounds} />
-          <a className="lc-menu-item" href="?ui=plain">
-            <span>
-              <Icon name="sleeping" /> Boring mode (no bar)
-            </span>
-          </a>
           <button
             type="button"
             className="lc-menu-item lc-menu-out"

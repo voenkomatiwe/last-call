@@ -33,6 +33,22 @@ export function BarHarness() {
   const [leftPct, setLeftPct] = useState(60);
   const [nightEndsAt, setNightEndsAt] = useState(() => Date.now() + 360_000);
   const NIGHT_MS = 600_000;
+  const [place, setPlace] = useState<"street" | "bar">("bar");
+  // Same choreography as the game screen: street layout until the walk ends, then the desktop close-in.
+  const [hallStreet, setHallStreet] = useState(false);
+  const [narrowing, setNarrowing] = useState(false);
+  const onEntered = () => {
+    if (!window.matchMedia("(min-width: 1100px) and (prefers-reduced-motion: no-preference)").matches) {
+      setHallStreet(false);
+      return;
+    }
+    setNarrowing(true);
+    setTimeout(() => {
+      setNarrowing(false);
+      setHallStreet(false);
+    }, 950);
+  };
+  const board = useMemo(() => ({ goal: String(day.goal ?? "-"), stake: "100K LAST" }), [day.goal]);
   const [next, setNext] = useState<Next>("ok");
   const [log, setLog] = useState<string[]>([]);
   const facts = useMemo(() => ({ closersK: 3, slashPct: 10 }), []);
@@ -83,6 +99,12 @@ export function BarHarness() {
       nightEndsAt={nightEndsAt}
       nightLengthMs={NIGHT_MS}
       primary={mode === "backlog" ? "settle" : mode === "ready" ? "drink" : "claim"}
+      place={place}
+      board={board}
+      onEntered={() => {
+        note("entered");
+        onEntered();
+      }}
     />
   );
 
@@ -106,6 +128,28 @@ export function BarHarness() {
           }}
         >
           New day
+        </button>
+      </p>
+      <p>
+        Place:{" "}
+        <button
+          type="button"
+          onClick={() => {
+            setPlace("street");
+            setHallStreet(true);
+          }}
+        >
+          Street
+        </button>{" "}
+        <button
+          type="button"
+          onClick={() => {
+            setMode("warmup");
+            setPlace("bar");
+            note("joined: entering");
+          }}
+        >
+          Join (walk in)
         </button>
       </p>
       <p>
@@ -173,6 +217,8 @@ export function BarHarness() {
           onSend={(label) => note(`send: ${label}`)}
           onEnableQuick={() => note("enable one-tap")}
           onDisconnect={() => note("disconnect")}
+          street={hallStreet}
+          narrowing={narrowing}
         />
         <details
           style={{

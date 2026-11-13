@@ -1,7 +1,7 @@
 import "./global.css";
 
 import type { Metadata } from "next";
-import { Golos_Text, JetBrains_Mono, Tilt_Neon } from "next/font/google";
+import { Caveat, Golos_Text, JetBrains_Mono, Tilt_Neon } from "next/font/google";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
@@ -17,10 +17,12 @@ const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
 });
 const tiltNeon = Tilt_Neon({ subsets: ["latin"], variable: "--font-tilt-neon" });
+// Chalk on the street A-frame (LC-024).
+const caveat = Caveat({ subsets: ["latin"], weight: ["700"], variable: "--font-caveat" });
 
 export default function RootLayout({ children }: { readonly children: ReactNode }) {
   return (
-    <html lang="en" className={`${golos.variable} ${jetbrains.variable} ${tiltNeon.variable}`}>
+    <html lang="en" className={`${golos.variable} ${jetbrains.variable} ${tiltNeon.variable} ${caveat.variable}`}>
       <body>{children}</body>
     </html>
   );

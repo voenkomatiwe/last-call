@@ -1,13 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
-
+import { useEffect, useMemo, useState } from "react";
+import type { QuickCheckIn } from "../../checkin/use-checkin-key";
 import type { CheckInResult } from "../../contract/views";
+import { BarHall } from "./bar-hall";
 import { BarScene } from "./bar-scene";
+import { useBarSettings } from "./bar-settings";
 import type { BarDay, BarMode } from "./events";
+import { harnessData } from "./harness-data";
 
 // `/dev/bar`: the bar against a simulated chain, to check the scene, the gesture, and every
 // outcome without a wallet. The real page wires the same component to the contract.
+// `/dev/bar?hall` shows the whole hall (chalkboard, scene, tab) on synthetic contract views.
+
+const QUICK_OFF: QuickCheckIn = { status: "off", enable: async () => {}, checkIn: async () => undefined };
 
 type Next = "ok" | "rejected" | "already" | "backlog";
 
@@ -53,66 +59,122 @@ export function BarHarness() {
     note(`${k} other check-in(s)`);
   };
 
+  const settings = useBarSettings();
+  const [hall, setHall] = useState(false);
+  const [readAt] = useState(() => Date.now());
+  useEffect(() => {
+    setHall(new URLSearchParams(window.location.search).has("hall"));
+  }, []);
+
+  const scene = (
+    <BarScene
+      day={day}
+      mode={mode}
+      checkedInToday={checkedIn}
+      accountId="you.test"
+      streak={streak}
+      facts={facts}
+      onCheckIn={onCheckIn}
+      sound={settings.sound}
+      bodySounds={settings.bodySounds}
+    />
+  );
+
+  const controls = (
+    <fieldset>
+      <legend>Simulated chain</legend>
+      <p>
+        <button type="button" onClick={() => other(1)}>
+          Another account checks in
+        </button>{" "}
+        <button type="button" onClick={() => other(5)}>
+          Five check in
+        </button>{" "}
+        <button
+          type="button"
+          onClick={() => {
+            setDay((d) => ({ ...d, day: d.day + 1, count: 0, closers: [] }));
+            setCheckedIn(false);
+            setMode((m) => (m === "done-today" ? "ready" : m));
+            note("new day");
+          }}
+        >
+          New day
+        </button>
+      </p>
+      <p>
+        Mode:{" "}
+        {MODES.map((m) => (
+          <label key={m} style={{ marginRight: 8 }}>
+            <input type="radio" name="mode" checked={mode === m} onChange={() => setMode(m)} /> {m}
+          </label>
+        ))}
+      </p>
+      <p>
+        Next check-in:{" "}
+        {(["ok", "rejected", "already", "backlog"] as const).map((n) => (
+          <label key={n} style={{ marginRight: 8 }}>
+            <input type="radio" name="next" checked={next === n} onChange={() => setNext(n)} /> {n}
+          </label>
+        ))}
+      </p>
+      <p>
+        <label>
+          Streak {streak}{" "}
+          <input type="range" min={0} max={30} value={streak} onChange={(e) => setStreak(Number(e.target.value))} />
+        </label>
+      </p>
+      <ol reversed aria-label="Log">
+        {log.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ol>
+    </fieldset>
+  );
+
+  if (hall) {
+    return (
+      <main>
+        <BarHall
+          data={harnessData(day, checkedIn, streak, readAt)}
+          kickable={["sleepy.test"]}
+          accountId="you.test"
+          busy={undefined}
+          message={undefined}
+          quick={QUICK_OFF}
+          stage={scene}
+          keys={<p>No admin key (simulated)</p>}
+          settings={settings}
+          onSend={(label) => note(`send: ${label}`)}
+          onEnableQuick={() => note("enable one-tap")}
+          onDisconnect={() => note("disconnect")}
+        />
+        <details
+          style={{
+            position: "fixed",
+            left: 8,
+            bottom: 8,
+            zIndex: 10,
+            maxWidth: 420,
+            maxHeight: "80vh",
+            overflow: "auto",
+            padding: 8,
+            borderRadius: 8,
+            background: "#fff",
+            color: "#000",
+          }}
+        >
+          <summary>Simulated chain</summary>
+          {controls}
+        </details>
+      </main>
+    );
+  }
+
   return (
     <main style={{ maxWidth: 460, margin: "0 auto", padding: "16px" }}>
-      <BarScene
-        day={day}
-        mode={mode}
-        checkedInToday={checkedIn}
-        accountId="you.test"
-        streak={streak}
-        facts={facts}
-        onCheckIn={onCheckIn}
-      />
-      <fieldset>
-        <legend>Simulated chain</legend>
-        <p>
-          <button type="button" onClick={() => other(1)}>
-            Another account checks in
-          </button>{" "}
-          <button type="button" onClick={() => other(5)}>
-            Five check in
-          </button>{" "}
-          <button
-            type="button"
-            onClick={() => {
-              setDay((d) => ({ ...d, day: d.day + 1, count: 0, closers: [] }));
-              setCheckedIn(false);
-              setMode((m) => (m === "done-today" ? "ready" : m));
-              note("new day");
-            }}
-          >
-            New day
-          </button>
-        </p>
-        <p>
-          Mode:{" "}
-          {MODES.map((m) => (
-            <label key={m} style={{ marginRight: 8 }}>
-              <input type="radio" name="mode" checked={mode === m} onChange={() => setMode(m)} /> {m}
-            </label>
-          ))}
-        </p>
-        <p>
-          Next check-in:{" "}
-          {(["ok", "rejected", "already", "backlog"] as const).map((n) => (
-            <label key={n} style={{ marginRight: 8 }}>
-              <input type="radio" name="next" checked={next === n} onChange={() => setNext(n)} /> {n}
-            </label>
-          ))}
-        </p>
-        <p>
-          <label>
-            Streak {streak}{" "}
-            <input type="range" min={0} max={30} value={streak} onChange={(e) => setStreak(Number(e.target.value))} />
-          </label>
-        </p>
-        <ol reversed aria-label="Log">
-          {log.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ol>
-      </fieldset>
+      {scene}
+      {controls}
     </main>
   );
 }

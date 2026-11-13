@@ -10,7 +10,7 @@ import { type BarFacts, bartenderError, chatLines, hintLines, ownCheckInLine } f
 import { createBarScene, type BarScene as Engine } from "./scene";
 
 // The joined player's bar (LC-021). The chain decides; this component only shows it: the mode comes
-// from `get_member`, the crowd from the polled day, and a full "до дна" calls `onCheckIn`, which
+// from `get_member`, the crowd from the polled day, and a full "bottoms up" calls `onCheckIn`, which
 // sends the check-in through the page's existing path.
 
 export interface BarSceneProps {
@@ -22,28 +22,22 @@ export interface BarSceneProps {
   readonly facts: BarFacts;
   /** Sends `check_in` and resolves with its result; rejects with the wallet's or the contract's error. */
   readonly onCheckIn: () => Promise<CheckInResult>;
+  /** Sound settings live next to the wallet (`useBarSettings`); the scene only follows them. */
+  readonly sound: boolean;
+  readonly bodySounds: boolean;
 }
 
-const SOUND_KEY = "last-call:bar-sound";
-const BODY_KEY = "last-call:bar-body";
-
-function readFlag(key: string): boolean {
-  try {
-    return localStorage.getItem(key) !== "off";
-  } catch {
-    return true;
-  }
-}
-
-function writeFlag(key: string, on: boolean) {
-  try {
-    localStorage.setItem(key, on ? "on" : "off");
-  } catch {
-    // a remembered toggle is a convenience only
-  }
-}
-
-export function BarScene({ day, mode, checkedInToday, accountId, streak, facts, onCheckIn }: BarSceneProps) {
+export function BarScene({
+  day,
+  mode,
+  checkedInToday,
+  accountId,
+  streak,
+  facts,
+  onCheckIn,
+  sound,
+  bodySounds,
+}: BarSceneProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sayRef = useRef<HTMLDivElement>(null);
@@ -54,8 +48,6 @@ export function BarScene({ day, mode, checkedInToday, accountId, streak, facts, 
   const engine = useRef<Engine | null>(null);
   const checkInRef = useRef(onCheckIn);
   checkInRef.current = onCheckIn;
-  const [sound, setSound] = useState(true);
-  const [body, setBody] = useState(true);
   /** The player's own confirmed check-in, shown before the next poll catches up. */
   const [own, setOwn] = useState<{ day: number; n: number } | null>(null);
 
@@ -87,12 +79,6 @@ export function BarScene({ day, mode, checkedInToday, accountId, streak, facts, 
       },
     });
     engine.current = scene;
-    const soundOn = readFlag(SOUND_KEY);
-    const bodyOn = readFlag(BODY_KEY);
-    setSound(soundOn);
-    setBody(bodyOn);
-    scene.setSound(soundOn);
-    scene.setBodySounds(bodyOn);
     return () => {
       engine.current = null;
       scene.destroy();
@@ -102,6 +88,14 @@ export function BarScene({ day, mode, checkedInToday, accountId, streak, facts, 
   useEffect(() => {
     engine.current?.setMode(mode);
   }, [mode]);
+
+  useEffect(() => {
+    engine.current?.setSound(sound);
+  }, [sound]);
+
+  useEffect(() => {
+    engine.current?.setBodySounds(bodySounds);
+  }, [bodySounds]);
 
   useEffect(() => {
     engine.current?.setLines({ hints: hintLines(day.goal, facts), chat: chatLines(facts) });
@@ -131,20 +125,20 @@ export function BarScene({ day, mode, checkedInToday, accountId, streak, facts, 
   });
 
   return (
-    <section className={`lc-bar${drunk > 0 ? " lc-bar-drunk" : ""}`} style={style} aria-label="Бар">
+    <section className={`lc-bar${drunk > 0 ? " lc-bar-drunk" : ""}`} style={style} aria-label="The bar">
       <div
         ref={rootRef}
         className="lc-bar-scene"
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the scene is the check-in control (hold Space).
         tabIndex={0}
         role="application"
-        aria-label="Бар от первого лица. Ведите руку с бокалом пальцем, поднесите ко рту и держите, пока не допьёте — это чек-ин. С клавиатуры: удерживайте пробел."
+        aria-label="First-person bar. Drag the pint to your mouth and hold until it is empty: that is your check-in. Keyboard: hold Space."
       >
         <canvas ref={canvasRef} />
         <div ref={signRef} className="lc-bar-sign" aria-hidden="true">
           LAST CALL
         </div>
-        <button ref={bellRef} type="button" className="lc-bar-bell" aria-label="Колокол">
+        <button ref={bellRef} type="button" className="lc-bar-bell" aria-label="Bell">
           <svg viewBox="0 0 34 40" aria-hidden="true" className="lc-bar-wob" style={wob(0)}>
             <path d="M17 2v4" stroke="#c9a14a" strokeWidth="2" />
             <path d="M6 30c2-4 2-10 3-14 1-5 4-8 8-8s7 3 8 8c1 4 1 10 3 14z" fill="#d9a441" stroke="#8a6420" />
@@ -154,63 +148,28 @@ export function BarScene({ day, mode, checkedInToday, accountId, streak, facts, 
         </button>
         <div className="lc-bar-hud" aria-live="polite">
           <span className="lc-bar-chip lc-bar-wob" style={wob(1)}>
-            отметились <b>{count}</b>
+            on board <b>{count}</b>
             {day.goal !== null && ` / ${day.goal}`}
           </span>
           <span className="lc-bar-chip lc-bar-wob" style={wob(2)}>
             {day.isIdle
-              ? "тихий день: мало участников"
+              ? "quiet night: too few members"
               : day.goal === null
-                ? "день ещё не открыт"
+                ? "day not open yet"
                 : count < day.goal
-                  ? `до звонка ${day.goal - count}`
-                  : "цель взята"}
+                  ? `${day.goal - count} to the bell`
+                  : "goal hit!"}
           </span>
           <span className="lc-bar-chip lc-bar-wob" style={wob(3)}>
-            стрик <b>{streak}</b>
+            streak <b>{streak}</b>
           </span>
         </div>
         <div ref={sayRef} className="lc-bar-say" role="status" aria-live="polite" />
         <div ref={bangRef} className="lc-bar-bang" aria-hidden="true">
-          БАХ!
+          BANG!
         </div>
         <div ref={tipRef} className="lc-bar-tip lc-bar-wob" style={wob(4)} />
       </div>
-      <div className="lc-bar-controls">
-        <button
-          type="button"
-          className="lc-bar-wob"
-          style={wob(5)}
-          aria-pressed={sound}
-          onClick={() => {
-            const next = !sound;
-            setSound(next);
-            writeFlag(SOUND_KEY, next);
-            engine.current?.setSound(next);
-          }}
-        >
-          звук: {sound ? "вкл" : "выкл"}
-        </button>
-        <button
-          type="button"
-          className="lc-bar-wob"
-          style={wob(6)}
-          aria-pressed={body}
-          onClick={() => {
-            const next = !body;
-            setBody(next);
-            writeFlag(BODY_KEY, next);
-            engine.current?.setBodySounds(next);
-          }}
-        >
-          отрыжка и пердёж
-        </button>
-      </div>
-      <p className="lc-bar-note">
-        <a href="?ui=plain" style={{ color: "inherit" }}>
-          Простой экран
-        </a>
-      </p>
     </section>
   );
 }

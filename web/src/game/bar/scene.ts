@@ -1,6 +1,6 @@
 // The last-orders bar: canvas 2D scene engine ported from `docs/prototypes/last-orders-bar.html`
 // (LC-021). It draws the room, four Open Peeps patrons (CC0), the player's nonic pint, the screen beer
-// flood, and runs the "до дна" gesture. It knows nothing about the chain: the host tells it the bar
+// flood, and runs the "bottoms up" gesture. It knows nothing about the chain: the host tells it the bar
 // mode and what happened, and is told when a full drink should become a check-in.
 //
 // Browser-only: import it from a client component, inside an effect.
@@ -16,7 +16,7 @@ export interface SceneElements {
   readonly canvas: HTMLCanvasElement;
   /** Bartender's line, big text in the middle. */
   readonly say: HTMLElement;
-  /** "БАХ!" when the glass lands. */
+  /** "BANG!" when the glass lands. */
   readonly bang: HTMLElement;
   /** Small hint at the bottom. */
   readonly tip: HTMLElement;
@@ -68,7 +68,7 @@ function norm(x: number, y: number): Pt {
   return { x: x / l, y: y / l };
 }
 
-// Tuning approved in the prototype ("Параметры для LC-021").
+// Tuning approved in the prototype (its "parameters for LC-021" panel).
 const GULP_S = 1.4;
 const LIFT_TRAVEL = 0.36;
 const SCREEN_FLOOD = 1;
@@ -129,8 +129,14 @@ export function createBarScene(options: SceneOptions): BarScene {
     timers.add(id);
   }
 
+  // The scene is laid out in a portrait column `cw` × `ch`. On a wider screen the canvas spans the
+  // full width `fw`, the column sits in the middle at `ox`, and the room and the counter repeat as
+  // bays of a long back bar on both sides (desktop fills the screen; phones are unchanged).
   let cw = 0;
   let ch = 0;
+  let fw = 0;
+  let ox = 0;
+  const PORTRAIT = 0.66;
   let dpr = 1;
   let sound = true;
   let bodyOn = true;
@@ -331,9 +337,11 @@ export function createBarScene(options: SceneOptions): BarScene {
   function resize() {
     const r = root.getBoundingClientRect();
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    cw = r.width;
+    fw = r.width;
     ch = r.height;
-    cv.width = Math.round(cw * dpr);
+    cw = Math.min(fw, ch * PORTRAIT);
+    ox = (fw - cw) / 2;
+    cv.width = Math.round(fw * dpr);
     cv.height = Math.round(ch * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!bokeh.length)
@@ -360,6 +368,15 @@ export function createBarScene(options: SceneOptions): BarScene {
   const SHELVES = [0.292, 0.398];
   const LAMPS = [0.2, 0.76];
   const LAMPY = 0.192;
+  /** Bay offsets (in column widths) that cover the full canvas: 0 is the middle column. */
+  function bays(): number[] {
+    const n = cw > 0 ? Math.ceil(ox / cw) : 0;
+    return Array.from({ length: n * 2 + 1 }, (_, i) => i - n);
+  }
+  /** Lamp positions (in column widths) over every bay. */
+  function lampsAcross(): number[] {
+    return bays().flatMap((k) => LAMPS.map((lx) => lx + k));
+  }
   function offscreen(): [HTMLCanvasElement, Ctx] {
     const c = document.createElement("canvas");
     c.width = Math.ceil(cw * dpr);
@@ -756,7 +773,7 @@ export function createBarScene(options: SceneOptions): BarScene {
   }
   function drawRoom(t: number) {
     if (!roomC) roomC = paintRoom();
-    ctx.drawImage(roomC, 0, 0, cw, ch);
+    for (const k of bays()) ctx.drawImage(roomC, k * cw, 0, cw, ch);
     ctx.save();
     ctx.beginPath();
     ctx.rect(cw * 0.04, ch * MIR0, cw * 0.92, ch * (MIR1 - MIR0));
@@ -777,11 +794,11 @@ export function createBarScene(options: SceneOptions): BarScene {
   }
   function drawBarTop(t: number) {
     if (!barC) barC = paintBar();
-    ctx.drawImage(barC, 0, 0, cw, ch);
+    for (const k of bays()) ctx.drawImage(barC, k * cw, 0, cw, ch);
     // warm light from the lamps: glow round the bulb, a faint cone, a pool on the counter
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    LAMPS.forEach((lx, i) => {
+    lampsAcross().forEach((lx, i) => {
       const X = lx * cw;
       const Y = ch * LAMPY;
       const w = cw * 0.13;
@@ -839,12 +856,12 @@ export function createBarScene(options: SceneOptions): BarScene {
       Math.min(cw, ch) * 0.35,
       cw / 2,
       ch * 0.55,
-      Math.hypot(cw, ch) * 0.62
+      Math.hypot(Math.max(cw, fw * 0.7), ch) * 0.62
     );
     vg.addColorStop(0, "rgba(8,2,6,0)");
     vg.addColorStop(1, "rgba(8,2,6,0.55)");
     ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillRect(-ox, 0, fw, ch);
   }
 
   // ---------- patrons drawing (effigy units: viewBox 184..1124 x 210..1340) ----------
@@ -1433,12 +1450,12 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (reduced) {
       // reduced motion: an amber veil that fades in and out instead of a spreading, draining flood
       ctx.fillStyle = `rgba(232,150,34,${0.55 * Math.min(1, flood)})`;
-      ctx.fillRect(0, 0, cw, ch);
+      ctx.fillRect(-ox, 0, fw, ch);
       ctx.restore();
       return;
     }
     if (drainY < 0 && rim) {
-      const R = flood * Math.hypot(cw, ch) * 0.9 * SCREEN_FLOOD;
+      const R = flood * Math.hypot(Math.max(cw, fw), ch) * 0.9 * SCREEN_FLOOD;
       ctx.beginPath();
       for (let i = 0; i <= 64; i++) {
         const an = (i / 64) * Math.PI * 2;
@@ -1460,12 +1477,12 @@ export function createBarScene(options: SceneOptions): BarScene {
       ctx.stroke();
     } else if (drainY >= 0) {
       ctx.beginPath();
-      ctx.moveTo(0, ch);
+      ctx.moveTo(-ox, ch);
       for (let i = 0; i <= 40; i++) {
-        const x = (i / 40) * cw;
+        const x = -ox + (i / 40) * fw;
         ctx.lineTo(x, drainY + Math.sin(i * 0.7 + t / 110) * 10 + Math.sin(i * 1.9 - t / 70) * 5);
       }
-      ctx.lineTo(cw, ch);
+      ctx.lineTo(fw - ox, ch);
       ctx.closePath();
       const lg = ctx.createLinearGradient(0, drainY, 0, ch);
       lg.addColorStop(0, "rgba(255,214,120,0.9)");
@@ -1478,7 +1495,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     }
     ctx.fillStyle = "rgba(255,250,225,0.55)";
     for (let i = 0; i < 40; i++) {
-      const x = ((i * 97.3) % 1) * cw;
+      const x = -ox + ((i * 97.3) % 1) * fw;
       const y = ch - ((t / 12 + i * 53) % ch);
       if (drainY >= 0 && y < drainY) continue;
       ctx.beginPath();
@@ -1591,7 +1608,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (mode === "hold" && held && lift > 0.96) {
       mode = "drink";
       gulpT = 0;
-      tipText("держи… держи…");
+      tipText("hold… hold…");
       crowdCheer();
     }
     if (mode === "drink") {
@@ -1621,7 +1638,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     }
     if (mode === "idle" && t - lastHint > 22000 && hints.length) {
       lastHint = t;
-      say(pick(hints), "бармен");
+      say(pick(hints), "bartender");
     }
     bubbles.forEach((b) => {
       b.t += dt * b.v;
@@ -1641,7 +1658,7 @@ export function createBarScene(options: SceneOptions): BarScene {
       if (d.a <= 0 || d.y > ch + 20) drops.splice(i, 1);
     }
     if (cw > 0) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, dpr * ox, 0);
       drawBarWorld(t);
       drawFlood(t, rimNow);
       drawDrops();
@@ -1737,8 +1754,8 @@ export function createBarScene(options: SceneOptions): BarScene {
       mode = "wait";
       held = false;
       liftTarget = 0.3;
-      tipText("бармен записывает…");
-      say("Записываю…", "бармен");
+      tipText("bartender is writing it down…");
+      say("Writing it down…", "bartender");
       options.onFullDrink();
       return;
     }
@@ -1748,7 +1765,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     }
     // the mode changed mid-drink (warm-up, backlog): nothing is sent, nothing counted
     mode = "wait";
-    api.checkInFailed(refuseLine() ?? "Не записал");
+    api.checkInFailed(refuseLine() ?? "Not counted");
   }
   /** The glass lands with a bang: after a confirmed check-in (`outcome`) or an extra one on the house. */
   function slam(outcome: CheckInOutcome | null, lineText: string | null) {
@@ -1795,14 +1812,14 @@ export function createBarScene(options: SceneOptions): BarScene {
         if (outcome) {
           ownDone = true;
           bodyAfterMine();
-          say(lineText ?? "До дна! Засчитано");
+          say(lineText ?? "Bottoms up! Counted");
           if (outcome.n === outcome.goal) goalReached();
           crowdPraise();
         } else {
           extraDrinks++;
           if (Math.random() < 0.5) bodyAfterMine();
           if (!reduced) wobble = Math.min(6, wobble + 1.5);
-          say(at(LINES.extra, Math.min(LINES.extra.length - 1, extraDrinks - 1)), "бармен");
+          say(at(LINES.extra, Math.min(LINES.extra.length - 1, extraDrinks - 1)), "bartender");
           talk(pick(patrons), pick(LINES.enough), 2000);
         }
         later(() => {
@@ -1846,7 +1863,7 @@ export function createBarScene(options: SceneOptions): BarScene {
       }, 2500);
     };
     const neighbours = patrons.filter((q) => q !== p && !q.busy);
-    if (neighbours.length) talk(pick(neighbours), pick(cheerFor(label.replace(/^\+\d+\s*/, "") || "друг")), 1400);
+    if (neighbours.length) talk(pick(neighbours), pick(cheerFor(label.replace(/^\+\d+\s*/, "") || "fren")), 1400);
     if (reduced) {
       // a short fade of the patron's beer instead of the lift-and-chug timeline
       gsap.to(p, { vol: 0, duration: 0.4, onComplete: done });
@@ -1927,20 +1944,20 @@ export function createBarScene(options: SceneOptions): BarScene {
 
   // ---------- input ----------
   function refuseLine(): string | null {
-    if (barMode === "warmup") return "Прогрев: бокал нальют, когда наступит твой день активации";
-    if (barMode === "backlog") return "Сначала закройте прошлые дни (Settle), потом наливаю";
+    if (barMode === "warmup") return "Warm-up: your pint gets poured on your activation day";
+    if (barMode === "backlog") return "Settle the old days first, then I pour";
     return null;
   }
   function local(e: PointerEvent): Pt {
     const r = root.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    return { x: e.clientX - r.left - ox, y: e.clientY - r.top };
   }
   function onPointerDown(e: PointerEvent) {
     ensureAudio();
     if (mode !== "idle") return;
     const refuse = refuseLine();
     if (refuse) {
-      say(refuse, "бармен");
+      say(refuse, "bartender");
       return;
     }
     const p = local(e);
@@ -1982,7 +1999,7 @@ export function createBarScene(options: SceneOptions): BarScene {
       later(() => {
         vol = 1;
         pour(0);
-        tipText("бармен долил. попробуй до дна");
+        tipText("refilled. try bottoms up");
       }, 700);
     }
   }
@@ -1995,7 +2012,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (mode !== "idle") return;
     const refuse = refuseLine();
     if (refuse) {
-      say(refuse, "бармен");
+      say(refuse, "bartender");
       return;
     }
     mode = "hold";
@@ -2029,7 +2046,7 @@ export function createBarScene(options: SceneOptions): BarScene {
           ],
         }
       );
-    say(at(LINES.bell, Math.min(LINES.bell.length - 1, bellPokes - 1)), "бармен");
+    say(at(LINES.bell, Math.min(LINES.bell.length - 1, bellPokes - 1)), "bartender");
     patrons.forEach((p) => {
       p.face = "shout";
       p.faceUntil = performance.now() + 500;
@@ -2137,7 +2154,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     o.stop(end);
     return o;
   }
-  // cartoon swallow "глк": a wet click, the throat blob jumps up in pitch and drops, then a low thump
+  // cartoon swallow "glk": a wet click, the throat blob jumps up in pitch and drops, then a low thump
   function gulp(v: number, pv: number) {
     if (!audio || !sound) return;
     const a = audio;
@@ -2174,7 +2191,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     d.start(t);
     d.stop(t + 0.26);
   }
-  // fallback when the recordings did not load: a rattly voiced buzz through "оа" mouth formants
+  // fallback when the recordings did not load: a rattly voiced buzz through "oa" mouth formants
   function burpSynth(v: number, pv: number) {
     const a = audio as AudioContext;
     const t = a.currentTime;
@@ -2214,7 +2231,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     src.start(t);
     src.stop(end);
   }
-  // fallback "пррт": a low buzz flapping on and off, muffled, with a squeaky rising tail
+  // fallback "prrt": a low buzz flapping on and off, muffled, with a squeaky rising tail
   function fartSynth(v: number, pv: number) {
     const a = audio as AudioContext;
     const t = a.currentTime;
@@ -2368,10 +2385,10 @@ export function createBarScene(options: SceneOptions): BarScene {
     tipEl.textContent = text;
   }
   function idleTip(): string {
-    if (barMode === "warmup") return "прогрев: бокал нальют в день активации";
-    if (barMode === "backlog") return "сначала Settle — потом наливаем";
-    if (barMode === "done-today" || ownDone) return "сегодня ты отметился. можно ещё — за счёт заведения";
-    return "возьми бокал пальцем и неси ко рту · пробел";
+    if (barMode === "warmup") return "warm-up: pint pours on your activation day";
+    if (barMode === "backlog") return "settle first, then we pour";
+    if (barMode === "done-today" || ownDone) return "checked in today. another one? on the house";
+    return "drag the pint to your mouth and hold · or hold space";
   }
 
   // ---------- wiring ----------
@@ -2450,7 +2467,7 @@ export function createBarScene(options: SceneOptions): BarScene {
         vol = barMode === "warmup" ? 0 : 1;
         tipText(idleTip());
       }
-      say("Новый день, бар открыт", "бармен");
+      say("gm. New day, bar is open", "bartender");
     },
     checkInSucceeded(outcome, lineText) {
       if (mode !== "wait") {
@@ -2462,7 +2479,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     },
     checkInFailed(lineText) {
       if (mode !== "wait") {
-        say(lineText, "бармен");
+        say(lineText, "bartender");
         return;
       }
       mode = "lower";
@@ -2475,7 +2492,7 @@ export function createBarScene(options: SceneOptions): BarScene {
           lift = liftTarget = s.l;
         },
         onComplete: () => {
-          say(lineText, "бармен");
+          say(lineText, "bartender");
           crowdGroan();
           later(() => {
             vol = barMode === "warmup" ? 0 : 1;

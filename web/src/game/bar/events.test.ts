@@ -146,28 +146,28 @@ describe("bartender lines", () => {
   const first = (lines: readonly string[]) => lines[0] as string;
 
   test("own check-in: number, closers, goal, late", () => {
-    expect(ownCheckInLine({ n: 3, goal: 6, inClosers: false }, first)).toBe("До дна! Засчитано, #3");
-    expect(ownCheckInLine({ n: 5, goal: 6, inClosers: true }, first)).toBe("До дна! Ты в замыкающих, #5");
-    expect(ownCheckInLine({ n: 6, goal: 6, inClosers: true }, first)).toBe("До дна! Ты закрыл цель");
-    expect(ownCheckInLine({ n: 7, goal: 6, inClosers: false }, first)).toBe(
-      "Цель уже взяли. Засчитано, но в розыгрыш не попал"
-    );
+    expect(ownCheckInLine({ n: 3, goal: 6, inClosers: false }, first)).toBe("Bottoms up! You're #3");
+    expect(ownCheckInLine({ n: 5, goal: 6, inClosers: true }, first)).toBe("Bottoms up! #5, you're a closer");
+    expect(ownCheckInLine({ n: 6, goal: 6, inClosers: true }, first)).toBe("You closed the goal. Ring it!");
+    expect(ownCheckInLine({ n: 7, goal: 6, inClosers: false }, first)).toBe("Goal's done. Counted, no hero ticket");
   });
 
   test("contract errors are explained", () => {
-    expect(bartenderError(new Error("Smart contract panicked: ERR_ALREADY_CHECKED_IN"))).toContain("уже отмечался");
+    expect(bartenderError(new Error("Smart contract panicked: ERR_ALREADY_CHECKED_IN"))).toContain(
+      "already checked in"
+    );
     expect(bartenderError(new Error("FunctionCallError ERR_BACKLOG"))).toContain("Settle");
-    expect(bartenderError(new Error("ERR_LOW_GAS"))).toBe("Не записал: ERR_LOW_GAS");
+    expect(bartenderError(new Error("ERR_LOW_GAS"))).toBe("Not counted: ERR_LOW_GAS");
   });
 
   test("the wallet's refusal is told apart", () => {
-    expect(bartenderError(new Error("User rejected"))).toContain("Кошелёк не подписал");
-    expect(bartenderError("User cancelled the transaction")).toContain("Кошелёк не подписал");
+    expect(bartenderError(new Error("User rejected"))).toContain("Wallet didn't sign");
+    expect(bartenderError("User cancelled the transaction")).toContain("Wallet didn't sign");
   });
 
   test("anything else is shown, shortened", () => {
     const text = bartenderError(new Error("x".repeat(200)));
     expect(text.length).toBeLessThan(110);
-    expect(text.startsWith("Не записал: ")).toBe(true);
+    expect(text.startsWith("Not counted: ")).toBe(true);
   });
 });

@@ -11,71 +11,78 @@ export interface BarFacts {
 }
 
 export const LINES = {
-  ok: ["До дна! Засчитано, #N", "Чисто! #N в журнале", "Бармен кивнул: #N, отметился", "Вот это глоток. #N засчитан"],
-  closer: [
-    "До дна! Ты в замыкающих, #N",
-    "#N — замыкающий. Держи кулаки за героя дня",
-    "Последний звонок твой: #N в замыкающих",
+  ok: [
+    "Bottoms up! You're #N",
+    "Clean chug. #N is on the tab",
+    "Bartender nods: #N, counted",
+    "Absolute unit. #N logged",
   ],
-  closeGoal: ["До дна! Ты закрыл цель", "Ты добил цель. Колокол твой"],
-  late: ["Цель уже взяли. Засчитано, но в розыгрыш не попал", "Опоздал к звонку, но наливаем"],
-  notMouth: ["Ну ты чего, до рта не донёс", "Мимо рта — мимо чек-ина", "Рука дрогнула?", "Бокал сам себя не выпьет"],
+  closer: ["Bottoms up! #N, you're a closer", "#N: closer seat. Pray for hero", "Last call is yours: #N closes"],
+  closeGoal: ["You closed the goal. Ring it!", "Goal hit by you. Legend"],
+  late: ["Goal's done. Counted, no hero ticket", "Late to the party, still poured"],
+  notMouth: [
+    "Ser, that's not your mouth",
+    "Missed the mouth, missed the check-in",
+    "Shaky hands?",
+    "The pint won't drink itself",
+  ],
   notFinished: [
-    "Не допил — не считается. До дна!",
-    "Половина — это не чек-ин",
-    "Бармен: я жду дно",
-    "Оставил на донышке — оставил без стрика",
+    "Half a pint is not a check-in",
+    "Paper hands. Finish it",
+    "Bartender: I'm waiting for the bottom",
+    "Leave a sip, lose the streak",
   ],
   extra: [
-    "Сегодня ты уже отметился. Этот за счёт заведения",
-    "Бармен: может, водички?",
-    "Чек-ин один в день, а пол уже качается",
-    "Стрик за это не растёт, а голова кружится",
+    "Already checked in. This one's on the house",
+    "Bartender: water, maybe?",
+    "One check-in a day. The floor is moving",
+    "No streak for this one, just vibes",
   ],
   bell: [
-    "Не трогай колокол",
-    "Я сказал, не трогай",
-    "Ещё раз — и звоню я. В полицию",
-    "Ладно, звони. Всё равно ключа от кассы нет",
+    "Don't touch the bell",
+    "I said don't touch the bell",
+    "Once more and I ring the cops",
+    "Fine. Ring it. Nobody has the till key anyway",
   ],
-  goal: ["ДЗЫНЬ! Цель взята, день спасён", "Звонок! Котёл сегодня не горит", "Цель есть. Стрик живёт"],
-  cheer: ["Давай!", "До дна!", "Раз! Два! Три!", "Пей, не болтай!", "Залпом!", "Ну-ну-ну!"],
-  praise: ["Красава!", "Наш человек", "Уважаю", "Вот это глоток", "Ещё один в строю"],
-  after: ["Отметился, красавчик", "+1, держим стрик", "Ещё чуть-чуть до звонка", "Чин-чин!"],
-  groan: ["Эээ!", "Ну ты чего", "Позор!", "Слабо?"],
-  enough: ["Ему хватит", "Вызовите такси", "Уважаю, но хватит"],
-  bless: ["Будь здоров", "Культурно", "Смачно!"],
-  fart: ["Фу!", "Кто это?!", "Окно откройте", "Это стул скрипнул", "Чек-ин с выхлопом", "Бармен, вытяжку!"],
-  toasts: ["За котёл!", "Ура!", "Стрик живёт!", "Чин-чин!"],
+  goal: ["DING! Goal hit, the day is saved", "Bell! The pot doesn't burn tonight", "Goal. Streak lives. WAGMI"],
+  cheer: ["Chug!", "Bottoms up!", "One! Two! Three!", "Drink, don't talk!", "Send it!", "Go go go!"],
+  praise: ["Legend!", "Based", "Respect", "What a chug", "One more on board"],
+  after: ["gm, checked in", "+1, streak holds", "Almost at the bell", "Cheers!"],
+  groan: ["Ugh!", "Bro", "ngmi", "Weak"],
+  enough: ["He's had enough", "Call him a cab", "Respect, but stop"],
+  bless: ["Bless you", "Classy", "Juicy!"],
+  fart: ["Ew!", "Who did that?!", "Open a window", "It was the chair", "Check-in with exhaust", "Bartender, the fan!"],
+  toasts: ["To the pot!", "Cheers!", "Streak lives!", "WAGMI!"],
 } as const;
 
 /** Lines the bartender drops when nothing happens; they depend on the deployment. */
 export function hintLines(goal: number | null, facts: BarFacts): string[] {
   return [
-    ...(goal !== null ? [`Цель видна всем: нужно ${goal}`] : []),
-    "Опоздавшим тоже наливаем, но без розыгрыша",
-    "У бармена нет ключа от кассы. Ни у кого нет",
-    `Не отметишься — сгорит ${facts.slashPct}% залога`,
+    ...(goal !== null ? [`Tonight we need ${goal}. Everyone can see it`] : []),
+    "Late? Still poured, just no hero ticket",
+    "Nobody has the till key. Not even me",
+    `No-shows lose ${facts.slashPct}% of their stake`,
   ];
 }
 
 /** Patron chatter. */
 export function chatLines(facts: BarFacts): string[] {
   return [
-    `Кто не придёт — минус ${facts.slashPct}% залога`,
-    "Котёл сегодня жирный",
-    "Бармен, повтори!",
-    "Где Дима? Опять прогуляет",
-    "Ещё пара — и звонок",
-    "Чур я герой дня",
-    "За тех, кто до цели!",
-    "Ключа от кассы нет даже у бармена",
-    "Чокнемся, пока места есть",
+    `Skip tonight, lose ${facts.slashPct}%`,
+    "The pot is thicc today",
+    "Bartender, same again!",
+    "Where's Dave? Skipping again",
+    "Two more and the bell rings",
+    "Dibs on hero",
+    "To everyone before the goal!",
+    "No admin key. Not even the bartender",
+    "Cheers while seats last",
+    "gm",
   ];
 }
 
 export function cheerFor(name: string): string[] {
-  return ["До дна!", `Давай, ${name}!`, "Залпом!"];
+  return ["Bottoms up!", `Go ${name}!`, "Send it!"];
 }
 
 /** What the bartender says after the player's own check-in landed. */
@@ -91,10 +98,10 @@ export function ownCheckInLine(
 }
 
 const BARTENDER_ERRORS: Partial<Record<ContractErrorCode, string>> = {
-  ERR_ALREADY_CHECKED_IN: "Ты сегодня уже отмечался. Второй раз не запишу",
-  ERR_WARMUP: "Прогрев ещё идёт: запишу со дня активации",
-  ERR_NOT_MEMBER: "Ты не в списке. Сначала вступи",
-  ERR_BACKLOG: "Сначала закройте прошлые дни (Settle), потом запишу",
+  ERR_ALREADY_CHECKED_IN: "You already checked in today. Not writing it twice",
+  ERR_WARMUP: "Still warming up: I'll count you from your activation day",
+  ERR_NOT_MEMBER: "You're not on the list. Join first",
+  ERR_BACKLOG: "Settle the old days first, then I pour",
 };
 
 /**
@@ -104,8 +111,8 @@ const BARTENDER_ERRORS: Partial<Record<ContractErrorCode, string>> = {
 export function bartenderError(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
   const code = contractErrorCode(text);
-  if (code) return BARTENDER_ERRORS[code] ?? `Не записал: ${code}`;
-  if (/reject|cancel|denied|declined|closed/i.test(text)) return "Передумал? Кошелёк не подписал — не считается";
-  if (/allowance/i.test(text)) return "У ключа для чек-ина кончился газ. Отметься через кошелёк";
-  return `Не записал: ${text.length > 90 ? `${text.slice(0, 90)}…` : text}`;
+  if (code) return BARTENDER_ERRORS[code] ?? `Not counted: ${code}`;
+  if (/reject|cancel|denied|declined|closed/i.test(text)) return "Changed your mind? Wallet didn't sign, not counted";
+  if (/allowance/i.test(text)) return "The check-in key ran out of gas. Use the wallet";
+  return `Not counted: ${text.length > 90 ? `${text.slice(0, 90)}…` : text}`;
 }

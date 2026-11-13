@@ -12,13 +12,15 @@ import type { NearNetwork } from "../near/near-config";
 import { createViewProvider } from "../near/view";
 import { useWallet } from "../wallet/use-wallet";
 import { type ActionState, accountActions, hasBacklog } from "./actions";
+import { BarHall } from "./bar/bar-hall";
 import { BarScene } from "./bar/bar-scene";
+import { type BarSettings, useBarSettings } from "./bar/bar-settings";
 import { barDay, barMode } from "./bar/events";
 import { formatBps, formatCountdown, formatLast, formatNear } from "./format";
 import { createGameQueryClient, type GameData, useGame } from "./use-game";
 
-// The game screen (plan section 6.2). A joined member plays the day in the bar (LC-021, plan
-// "Решение 13.11 (UI)"); everything else stays on the neutral, functional screen below it.
+// The game screen (plan section 6.2). A joined member plays the day in the bar hall (LC-021, plan
+// decision of 13 Nov); everyone else sees the neutral, functional screen.
 // `?ui=plain` hides the bar: the kill-switch fallback with the plain check-in button.
 
 interface Props {
@@ -58,6 +60,7 @@ function Game({ network, contractId, rpcUrl }: Props) {
   const [message, setMessage] = useState<string | undefined>(undefined);
 
   const quick = useCheckinKey({ rpcUrl, contractId, accountId, sendActions: wallet.sendActions });
+  const settings = useBarSettings();
   const [plain, setPlain] = useState(false);
   useEffect(() => {
     setPlain(new URLSearchParams(window.location.search).get("ui") === "plain");
@@ -95,6 +98,33 @@ function Game({ network, contractId, rpcUrl }: Props) {
     void execute(label, () => wallet.callContract(contractId, call), describe);
   }
 
+  // A joined member plays in the bar hall; everyone else (and `?ui=plain`) gets the neutral screen.
+  if (!plain && data?.account?.member && accountId) {
+    return (
+      <>
+        {error && (
+          <p className="lc-hall-alert" role="alert">
+            Could not read the contract: {error}
+          </p>
+        )}
+        <BarHall
+          data={data}
+          kickable={kickable}
+          accountId={accountId}
+          busy={busy}
+          message={message}
+          quick={quick}
+          stage={<Bar data={data} accountId={accountId} settings={settings} onCheckIn={checkInFromBar} />}
+          keys={<NoAdminKey network={network} contractId={contractId} rpcUrl={rpcUrl} />}
+          settings={settings}
+          onSend={(label, call) => send(label, call)}
+          onEnableQuick={() => void execute("Enable one-tap check-in", quick.enable)}
+          onDisconnect={() => wallet.disconnect()}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <WalletBar
@@ -107,9 +137,6 @@ function Game({ network, contractId, rpcUrl }: Props) {
         <p>Loading the game from {contractId}…</p>
       ) : (
         <>
-          {!plain && data.account?.member && accountId && (
-            <Bar data={data} accountId={accountId} onCheckIn={checkInFromBar} />
-          )}
           <DaySection data={data} />
           <AccountSection
             data={data}
@@ -133,10 +160,12 @@ function Game({ network, contractId, rpcUrl }: Props) {
 function Bar({
   data,
   accountId,
+  settings,
   onCheckIn,
 }: {
   readonly data: GameData;
   readonly accountId: string;
+  readonly settings: BarSettings;
   readonly onCheckIn: () => Promise<ReturnType<typeof parseCheckInResult>>;
 }) {
   const member = data.account?.member;
@@ -156,6 +185,8 @@ function Bar({
       streak={member.currentPersonalStreak}
       facts={facts}
       onCheckIn={onCheckIn}
+      sound={settings.sound}
+      bodySounds={settings.bodySounds}
     />
   );
 }

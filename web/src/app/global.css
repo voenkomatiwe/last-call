@@ -1,4 +1,4 @@
-/* Neutral placeholder styling. The visual direction is not decided yet. */
+/* Neutral placeholder styling for the screens outside the bar. */
 :root {
   color-scheme: light dark;
   font-family: system-ui, sans-serif;
@@ -13,4 +13,29 @@ main {
   max-width: 40rem;
   margin: 0 auto;
   padding: 3rem 1rem;
+}
+
+/* The bar hall (LC-021) takes the whole window and the night. */
+body:has(.lc-hall) {
+  background: radial-gradient(120% 60% at 50% 0%, #2a0c1f 0%, #110910 55%, #0b0508 100%) fixed;
+  color: #f6e8dc;
+  color-scheme: dark;
+}
+
+main:has(.lc-hall) {
+  max-width: none;
+  padding: 0;
+}
+
+/* The neon sign in the scene names the game; the page heading stays for screen readers. */
+main:has(.lc-hall) > h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+main:has(.lc-hall) > p:not([role="alert"]) {
+  display: none;
 }

@@ -6,6 +6,7 @@ A memecoin with no keys and a daily game: the community has to hit a check-in go
 
 ## Credits
 
+- Interface icons: [Solar Bold Duotone Icons](https://www.svgrepo.com/collection/solar-bold-duotone-icons/) by 480 Design, via SVG Repo (listed as CC0), in `web/src/game/bar/icons.tsx`.
 - People in the bar: [Open Peeps](https://www.openpeeps.com/) by Pablo Stanley (CC0), assembled from parts with different faces (`web/public/bar/peeps/`).
 - Sounds (`web/public/bar/sfx/`), trimmed and peak-normalised, from Wikimedia Commons:
   [Burp.wav](https://commons.wikimedia.org/wiki/File:Burp.wav) by TheVelocity (CC BY-SA 4.0);

@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { QuickCheckIn } from "../../checkin/use-checkin-key";
 import { kickCall, retryPickHeroCall } from "../../contract/calls";
 import { type ActionState, accountActions, hasBacklog } from "../actions";
-import { formatCountdown, shortLast } from "../format";
+import { formatCountdown, formatLast, shortLast } from "../format";
 
 export { shortLast };
 
@@ -65,7 +65,6 @@ interface Props {
   /** The bar scene. */
   readonly stage: ReactNode;
   /** The contract's access-key check. */
-  readonly keys: ReactNode;
   readonly settings: BarSettings;
   readonly onSend: Send;
   readonly onEnableQuick: () => void;
@@ -255,7 +254,16 @@ function Hud({
           <small>{multiplier}</small>
         </button>
       </div>
-      {accountId ? <AccountMenu accountId={accountId} settings={settings} onDisconnect={onDisconnect} /> : <span />}
+      {accountId ? (
+        <AccountMenu
+          accountId={accountId}
+          balance={data.account?.balance ?? null}
+          settings={settings}
+          onDisconnect={onDisconnect}
+        />
+      ) : (
+        <span />
+      )}
     </header>
   );
 }
@@ -304,7 +312,7 @@ function Sheet({
   );
 }
 
-function TabSheet({ data, busy, quick, keys, onSend, onEnableQuick }: Props) {
+function TabSheet({ data, busy, quick, onSend, onEnableQuick }: Props) {
   const account = data.account;
   const member = account?.member;
   const actions = accountActions(data.game, account);
@@ -392,7 +400,6 @@ function TabSheet({ data, busy, quick, keys, onSend, onEnableQuick }: Props) {
           {more.map((a) => a.note && <p key={a.id}>{a.note}</p>)}
         </details>
       )}
-      <div className="lc-keys">{keys}</div>
     </div>
   );
 }
@@ -543,13 +550,16 @@ function Switch({
   );
 }
 
-/** The wallet chip: sound settings and a confirmed log-out. */
+/** The wallet chip: the LAST in the wallet, sound settings and a confirmed log-out. */
 function AccountMenu({
   accountId,
+  balance,
   settings,
   onDisconnect,
 }: {
   readonly accountId: string;
+  /** `ft_balance_of`: LAST in the wallet, not the stake or rewards held by the contract. */
+  readonly balance: bigint | null;
   readonly settings: BarSettings;
   readonly onDisconnect: () => void;
 }) {
@@ -581,10 +591,16 @@ function AccountMenu({
         aria-expanded={open}
         aria-controls="lc-menu-pop"
         onClick={() => setOpen((v) => !v)}
-        title={accountId}
+        title={balance === null ? accountId : `${accountId}: ${formatLast(balance)} in your wallet`}
       >
         <i className="lc-menu-dot" aria-hidden="true" />
         <span className="lc-menu-who">{accountId}</span>
+        {balance !== null && (
+          <span className="lc-menu-bal">
+            <Icon name="bill" /> {shortLast(balance)}
+            <span className="sr-only"> LAST in your wallet</span>
+          </span>
+        )}
         <Icon name="settings" />
         <span className="sr-only">Settings</span>
       </button>

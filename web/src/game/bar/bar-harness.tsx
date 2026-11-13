@@ -300,7 +300,6 @@ export function BarHarness() {
           message={undefined}
           quick={QUICK_OFF}
           stage={scene}
-          keys={<p>No admin key (simulated)</p>}
           settings={settings}
           onSend={(label, call) => (call?.methodName === "claim" ? claimDemo(true) : note(`send: ${label}`))}
           onEnableQuick={() => note("enable one-tap")}

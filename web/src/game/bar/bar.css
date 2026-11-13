@@ -792,28 +792,8 @@
   font-size: 13px;
   color: #c9aebd;
 }
-.lc-keys {
-  border-top: 1px dashed #3a2633;
-  padding-top: 12px;
-  font-size: 13px;
-  color: #c9aebd;
-}
-.lc-keys h2 {
-  display: none;
-}
-.lc-keys p {
-  margin: 0 0 4px;
-}
-.lc-keys strong {
-  color: #ff4fb8;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.lc-keys a,
 .lc-link {
   color: #ffb84a;
-}
-.lc-link {
   justify-self: start;
   background: none;
   border: 0;
@@ -961,6 +941,18 @@
   border-radius: 50%;
   background: #5fd38d;
   flex: none;
+}
+.lc-menu-bal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid #ffffff22;
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffd36b;
+  white-space: nowrap;
 }
 .lc-menu-who {
   overflow: hidden;

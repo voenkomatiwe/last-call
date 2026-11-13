@@ -7,9 +7,7 @@ import { useCheckinKey } from "../checkin/use-checkin-key";
 import { checkInCall, faucetCall, joinCall, settleCall, storageDepositCall } from "../contract/calls";
 import { describeContractError } from "../contract/errors";
 import { parseCheckInResult } from "../contract/views";
-import { type AccessKeySummary, accessKeySummary } from "../near/access-keys";
 import type { NearNetwork } from "../near/near-config";
-import { createViewProvider } from "../near/view";
 import { useWallet } from "../wallet/use-wallet";
 import { type ActionState, hasBacklog } from "./actions";
 import { BarHall, type HallMessage, hallPrimary, shortLast } from "./bar/bar-hall";
@@ -31,11 +29,6 @@ interface Props {
   readonly contractId: string;
   readonly rpcUrl: string;
 }
-
-const EXPLORER: Record<NearNetwork, string> = {
-  testnet: "https://testnet.nearblocks.io/address/",
-  mainnet: "https://nearblocks.io/address/",
-};
 
 export function GameScreen(props: Props) {
   const [queryClient] = useState(createGameQueryClient);
@@ -200,7 +193,6 @@ function Game({ network, contractId, rpcUrl }: Props) {
         stage={
           <Bar data={data} accountId={accountId} settings={settings} onCheckIn={checkInFromBar} onEntered={onEntered} />
         }
-        keys={<NoAdminKey network={network} contractId={contractId} rpcUrl={rpcUrl} />}
         settings={settings}
         onSend={(label, call) => (call?.methodName === "claim" ? claim(call) : send(label, call))}
         onEnableQuick={() => void execute("Enable one-tap check-in", quick.enable)}
@@ -272,46 +264,5 @@ function Bar({
       history={data.history}
       jar={jar}
     />
-  );
-}
-
-function NoAdminKey({ network, contractId, rpcUrl }: Props) {
-  const provider = useMemo(() => createViewProvider(rpcUrl), [rpcUrl]);
-  const [keys, setKeys] = useState<AccessKeySummary | string | undefined>(undefined);
-  useEffect(() => {
-    let active = true;
-    accessKeySummary(provider, contractId).then(
-      (summary) => active && setKeys(summary),
-      (cause) => active && setKeys(cause instanceof Error ? cause.message : String(cause))
-    );
-    return () => {
-      active = false;
-    };
-  }, [provider, contractId]);
-
-  return (
-    <section aria-labelledby="keys-heading">
-      <h2 id="keys-heading">Admin keys</h2>
-      {keys === undefined ? (
-        <p>Checking the contract's access keys…</p>
-      ) : typeof keys === "string" ? (
-        <p>Could not read the access keys: {keys}</p>
-      ) : keys.total === 0 ? (
-        <p>
-          <strong>No admin key.</strong> {contractId} has no access keys: nobody can upgrade it, change its parameters,
-          or move its tokens.
-        </p>
-      ) : (
-        <p>
-          {contractId} still has {keys.total} access key{keys.total === 1 ? "" : "s"} ({keys.fullAccess} full access):
-          it is not locked yet.
-        </p>
-      )}
-      <p>
-        <a href={`${EXPLORER[network]}${contractId}`} target="_blank" rel="noreferrer">
-          See it on the explorer
-        </a>
-      </p>
-    </section>
   );
 }

@@ -89,7 +89,6 @@ export function chatLines(facts: BarFacts): string[] {
     "Two more and the bell rings",
     "Dibs on hero",
     "To everyone before the goal!",
-    "No admin key. Not even the bartender",
     "Cheers while seats last",
     "gm",
   ];

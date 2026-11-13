@@ -5,7 +5,7 @@ import "./bar.css";
 import { useEffect, useRef, useState } from "react";
 
 import type { CheckInResult, DaySummary } from "../../contract/views";
-import { shortLast } from "../format";
+import { formatCountdown, shortLast } from "../format";
 import type { BoardText } from "../street/street-art";
 import {
   type BarDay,
@@ -325,7 +325,50 @@ export function BarScene({
           BANG!
         </div>
         <div ref={tipRef} className="lc-bar-tip" />
+        <TentCard
+          show={place === "bar" && (checkedInToday || own?.day === day.day)}
+          night={day.day}
+          endsAt={nightEndsAt}
+        />
       </div>
     </section>
+  );
+}
+
+/**
+ * One pint a check-in (LC-029): once the player's check-in lands, the bartender props a paper tent
+ * card by the empty glass: tonight is done, and the next pint comes with the new day.
+ */
+function TentCard({
+  show,
+  night,
+  endsAt,
+}: {
+  readonly show: boolean;
+  readonly night: number;
+  readonly endsAt: number;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!show) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [show]);
+  const left = endsAt - now;
+  return (
+    <div className={`lc-bar-card${show ? " is-on" : ""}`} role="status" aria-hidden={!show}>
+      <span className="lc-bar-card-kicker">✓ night {night} · checked in</span>
+      <b className="lc-bar-card-title">See you tomorrow</b>
+      <span className="lc-bar-card-next">
+        {left > 0 ? (
+          <>
+            next pint in <time>{formatCountdown(left)}</time>
+          </>
+        ) : (
+          "new day is opening…"
+        )}
+      </span>
+    </div>
   );
 }

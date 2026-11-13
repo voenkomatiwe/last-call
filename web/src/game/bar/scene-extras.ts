@@ -229,39 +229,224 @@ export function drawPlaque(ctx: Ctx, x: number, y: number, w: number, name: stri
   ctx.restore();
 }
 
-/** The pot as a jar of coins on the counter, labelled; `level` (0..1) is how full it is (LC-025). */
+/** Stable pseudo-random 0..1 per index, so the coin pile does not reshuffle every frame. */
+const jitter = (i: number, k: number) => {
+  const s = Math.sin(i * 127.1 + k * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+};
+const COIN_TONES = ["#e8b23a", "#f4c95a", "#d39a24", "#c78a1c", "#f0bf48"] as const;
+
+/**
+ * The pot as a glass jar of coins on the counter (LC-025): a mason jar with a screw lid, coins piled
+ * loosely in a mound up to `level` (0..1), glass glare over them, and a hand-written paper label.
+ * `base` is the counter line, `h` the full height including the lid.
+ */
 export function drawJar(ctx: Ctx, x: number, base: number, h: number, font: string, level = 1) {
-  const w = h * 0.7;
-  ctx.save();
-  ctx.lineWidth = Math.max(1.3, h * 0.03);
-  ctx.strokeStyle = INK;
-  ctx.fillStyle = "rgba(255,240,220,0.14)";
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, base - h, w, h, w * 0.18);
-  ctx.fill();
-  ctx.fillStyle = "#e0a530";
-  const coins = level > 0 ? Math.max(1, Math.round(level * 24)) : 0;
-  for (let i = 0; i < coins; i++) {
-    const cx = x - w * 0.36 + ((i * 37) % 9) * (w * 0.09);
-    const cy = base - h * 0.08 - Math.floor(i / 4) * h * 0.125;
+  const w = h * 0.78;
+  const lw = Math.max(1.2, h * 0.028);
+  const top = base - h;
+  const lidH = h * 0.11;
+  const neckY = top + lidH;
+  const shoulderY = top + h * 0.3;
+  const neckW = w * 0.62;
+  const r = w * 0.16;
+  const body = () => {
     ctx.beginPath();
-    ctx.ellipse(cx, cy, w * 0.13, h * 0.045, 0, 0, 7);
-    ctx.fill();
-    ctx.stroke();
-  }
+    ctx.moveTo(x - neckW / 2, neckY);
+    ctx.lineTo(x - neckW / 2, neckY + h * 0.04);
+    ctx.bezierCurveTo(x - w / 2, neckY + h * 0.07, x - w / 2, shoulderY - h * 0.06, x - w / 2, shoulderY);
+    ctx.lineTo(x - w / 2, base - r);
+    ctx.quadraticCurveTo(x - w / 2, base, x - w / 2 + r, base);
+    ctx.lineTo(x + w / 2 - r, base);
+    ctx.quadraticCurveTo(x + w / 2, base, x + w / 2, base - r);
+    ctx.lineTo(x + w / 2, shoulderY);
+    ctx.bezierCurveTo(x + w / 2, shoulderY - h * 0.06, x + w / 2, neckY + h * 0.07, x + neckW / 2, neckY + h * 0.04);
+    ctx.lineTo(x + neckW / 2, neckY);
+    ctx.closePath();
+  };
+  ctx.save();
+  // soft shadow on the counter
+  ctx.fillStyle = "rgba(10,3,6,0.35)";
   ctx.beginPath();
-  ctx.roundRect(x - w / 2, base - h, w, h, w * 0.18);
+  ctx.ellipse(x + w * 0.06, base + h * 0.015, w * 0.58, h * 0.035, 0, 0, 7);
+  ctx.fill();
+  // the glass, tinted by the bar behind it
+  body();
+  const glass = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+  glass.addColorStop(0, "rgba(255,236,210,0.22)");
+  glass.addColorStop(0.5, "rgba(255,236,210,0.08)");
+  glass.addColorStop(1, "rgba(255,236,210,0.18)");
+  ctx.fillStyle = glass;
+  ctx.fill();
+
+  // coins: a loose pile filling from the bottom, the top heaped in the middle
+  if (level > 0) {
+    ctx.save();
+    body();
+    ctx.clip();
+    const floor = base - h * 0.035;
+    const room = floor - (neckY + h * 0.06);
+    const fill = floor - room * Math.min(1, level);
+    const mound = h * 0.05 * Math.min(1, level * 3);
+    const surface = (px: number) => fill - mound * (1 - ((px - x) / (w / 2)) ** 2);
+    // dark gold mass under the visible coins, so gaps read as more coins deeper in
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, floor + h);
+    for (let i = 0; i <= 12; i++) {
+      const px = x - w / 2 + (w * i) / 12;
+      ctx.lineTo(px, surface(px) + h * 0.03);
+    }
+    ctx.lineTo(x + w / 2, floor + h);
+    ctx.closePath();
+    ctx.fillStyle = "#8a5a12";
+    ctx.fill();
+    // a couple of folded bills poking out of the pile, as in any real tip jar
+    if (level > 0.15) {
+      const bills: readonly (readonly [number, number])[] = [
+        [-0.18, -0.35],
+        [0.2, 0.42],
+      ];
+      for (const [dx, rot] of bills) {
+        const bx = x + dx * w;
+        ctx.save();
+        ctx.translate(bx, surface(bx) + h * 0.015);
+        ctx.rotate(rot);
+        ctx.fillStyle = "#7fb26a";
+        ctx.strokeStyle = "#2f5a26";
+        ctx.lineWidth = lw * 0.5;
+        ctx.beginPath();
+        ctx.rect(-w * 0.09, -h * 0.13, w * 0.18, h * 0.16);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(47,90,38,0.6)";
+        ctx.beginPath();
+        ctx.ellipse(0, -h * 0.05, w * 0.04, h * 0.035, 0, 0, 7);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    const rx = w * 0.12;
+    const rowH = h * 0.042;
+    const rows = Math.ceil((floor - fill + mound) / rowH) + 1;
+    let n = 0;
+    for (let row = 0; row < rows; row++) {
+      const per = 5 + (row % 2);
+      for (let k = 0; k < per; k++) {
+        n++;
+        const cx = x - w / 2 + ((k + 0.5 + (row % 2 ? -0.25 : 0.1)) / per) * w + (jitter(n, 1) - 0.5) * rx * 0.8;
+        const cy = floor - row * rowH - (jitter(n, 2) - 0.5) * rowH * 0.6;
+        if (cy < surface(cx)) continue;
+        const ry = rx * (0.28 + jitter(n, 3) * 0.32);
+        const rot = (jitter(n, 4) - 0.5) * 0.9;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        // the coin's edge, then its face
+        ctx.fillStyle = "#7a4a0c";
+        ctx.beginPath();
+        ctx.ellipse(0, ry * 0.35, rx, ry, 0, 0, 7);
+        ctx.fill();
+        ctx.fillStyle = COIN_TONES[n % COIN_TONES.length] as string;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, ry, 0, 0, 7);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(90,50,8,0.75)";
+        ctx.lineWidth = lw * 0.45;
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255,246,200,0.7)";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx * 0.62, ry * 0.62, 0, Math.PI * 1.1, Math.PI * 1.7);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  // glare: a tall streak on the left, a thin one on the right, a sheen on the shoulder
+  ctx.save();
+  body();
+  ctx.clip();
+  // glass thickness: lit on the left, in shade on the right; contents soften towards both edges
+  const edge = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+  edge.addColorStop(0, "rgba(255,236,210,0.38)");
+  edge.addColorStop(0.12, "rgba(255,236,210,0.06)");
+  edge.addColorStop(0.8, "rgba(20,8,18,0)");
+  edge.addColorStop(1, "rgba(20,8,18,0.42)");
+  ctx.fillStyle = edge;
+  ctx.fillRect(x - w / 2, top, w, h);
+  ctx.fillStyle = "rgba(255,255,255,0.32)";
+  ctx.beginPath();
+  ctx.roundRect(x - w * 0.36, shoulderY - h * 0.02, w * 0.09, base - shoulderY - h * 0.1, w * 0.05);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.beginPath();
+  ctx.roundRect(x + w * 0.3, shoulderY + h * 0.06, w * 0.04, (base - shoulderY) * 0.5, w * 0.02);
+  ctx.fill();
+  ctx.restore();
+  // glints where the glass is thick: the shoulder and the heavy bottom
+  ctx.strokeStyle = "rgba(255,255,255,0.75)";
+  ctx.lineWidth = lw * 0.8;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(x - w * 0.18, shoulderY + h * 0.02, w * 0.2, Math.PI * 1.15, Math.PI * 1.4);
   ctx.stroke();
-  ctx.fillStyle = "#3a1c0c";
-  ctx.fillRect(x - w * 0.42, base - h - h * 0.08, w * 0.84, h * 0.1);
-  ctx.strokeRect(x - w * 0.42, base - h - h * 0.08, w * 0.84, h * 0.1);
-  ctx.fillStyle = "#fff4e4";
-  ctx.fillRect(x - w * 0.36, base - h * 0.72, w * 0.72, h * 0.2);
-  ctx.fillStyle = INK;
-  ctx.font = `900 ${Math.round(h * 0.15)}px ${font}`;
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.3, base - h * 0.03);
+  ctx.lineTo(x - w * 0.05, base - h * 0.03);
+  ctx.stroke();
+  // outline: thinner than the patrons' ink, glass reads lighter
+  body();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = lw * 0.8;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  // paper label, slightly crooked, hand-written
+  ctx.save();
+  ctx.translate(x, base - h * 0.4);
+  ctx.rotate(-0.07);
+  const labW = w * 0.7;
+  const labH = h * 0.2;
+  ctx.fillStyle = "#ead6a8";
+  ctx.strokeStyle = "rgba(90,50,8,0.6)";
+  ctx.lineWidth = lw * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(-labW / 2, -labH / 2);
+  ctx.lineTo(labW / 2, -labH / 2 + labH * 0.06);
+  ctx.lineTo(labW / 2 - labW * 0.02, labH / 2);
+  ctx.lineTo(-labW / 2 + labW * 0.03, labH / 2 - labH * 0.04);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#5a2a0e";
+  ctx.font = `italic 900 ${Math.round(labH * 0.72)}px ${font}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("POT", x, base - h * 0.615);
+  ctx.fillText("POT", 0, labH * 0.04);
+  ctx.restore();
+  // screw lid: brass with ridges
+  const lidW = neckW * 1.08;
+  const brass = ctx.createLinearGradient(x - lidW / 2, 0, x + lidW / 2, 0);
+  brass.addColorStop(0, "#7d5a1c");
+  brass.addColorStop(0.35, "#e2b75a");
+  brass.addColorStop(0.6, "#b88a33");
+  brass.addColorStop(1, "#6b4a14");
+  ctx.fillStyle = brass;
+  ctx.beginPath();
+  ctx.roundRect(x - lidW / 2, top, lidW, lidH, lidH * 0.25);
+  ctx.fill();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = lw;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(40,20,4,0.55)";
+  ctx.lineWidth = lw * 0.5;
+  for (let i = 1; i < 6; i++) {
+    const lx = x - lidW / 2 + (lidW * i) / 6;
+    ctx.beginPath();
+    ctx.moveTo(lx, top + lidH * 0.2);
+    ctx.lineTo(lx, top + lidH * 0.8);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 

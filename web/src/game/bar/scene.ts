@@ -237,7 +237,6 @@ export function createBarScene(options: SceneOptions): BarScene {
   let vol = 1;
   let flood = 0;
   let drainY = -1;
-  let extraDrinks = 0;
   let startY = 0;
   let bellPokes = 0;
   let bellRungToday = false;
@@ -1142,6 +1141,13 @@ export function createBarScene(options: SceneOptions): BarScene {
     n.start(t0, Math.random());
     n.stop(t0 + 3.3);
   }
+  /** What the bartender says when the player walks in, by what the chain says about them now. */
+  function welcomeLine(): string {
+    if (barMode === "warmup") return "Welcome. Warm-up first: your pint is poured soon";
+    if (barMode === "backlog") return "Welcome back. Settle the old days first, then I pour";
+    if (barMode === "done-today" || ownDone) return `Welcome back. You've had tonight's pint. ${nextPintIn()}`;
+    return "Welcome back. Your pint is poured: bottoms up";
+  }
   function placeClass() {
     root.classList.toggle("is-street", place === "street");
   }
@@ -1159,7 +1165,11 @@ export function createBarScene(options: SceneOptions): BarScene {
       street.zoom = 0;
       mode = "idle";
       tipText(idleTip());
-      const hi = ["New face!", "Come in!", "Sit with us", "First time here?"];
+      // a new member arrives in warm-up; anyone else is a regular coming back
+      const hi =
+        barMode === "warmup"
+          ? ["New face!", "Come in!", "Sit with us", "First time here?"]
+          : ["Look who's back!", "gm!", "There they are!", "Pull up a stool"];
       patrons.forEach((p, i) => {
         later(
           () => {
@@ -1170,7 +1180,7 @@ export function createBarScene(options: SceneOptions): BarScene {
           600 + i * 260
         );
       });
-      later(() => say("Welcome. Warm-up first: your pint is poured soon", "bartender"), 2000);
+      later(() => say(welcomeLine(), "bartender"), 2000);
     };
     if (reduced) {
       arrive();
@@ -2153,6 +2163,8 @@ export function createBarScene(options: SceneOptions): BarScene {
     const dt = Math.min(0.033, (t - last) / 1000);
     last = t;
     frameDt = dt;
+    // a pint that is not due today is never shown full at rest, whatever order the events came in
+    if (mode === "idle" && vol > 0 && restingEmpty()) vol = 0;
     lift += (liftTarget - lift) * Math.min(1, dt * 14);
     hx += (hxTarget - hx) * Math.min(1, dt * 12);
     const lv = (lift - lastLift) / Math.max(dt, 0.001);
@@ -2380,16 +2392,12 @@ export function createBarScene(options: SceneOptions): BarScene {
       options.onFullDrink();
       return;
     }
-    if (barMode === "done-today" || ownDone) {
-      slam(null, null);
-      return;
-    }
     // the mode changed mid-drink (warm-up, backlog): nothing is sent, nothing counted
     mode = "wait";
     api.checkInFailed(refuseLine() ?? "Not counted");
   }
-  /** The glass lands with a bang: after a confirmed check-in (`outcome`) or an extra one on the house. */
-  function slam(outcome: CheckInOutcome | null, lineText: string | null) {
+  /** The glass lands with a bang after a confirmed check-in; it stays empty until the next day (LC-029). */
+  function slam(outcome: CheckInOutcome, lineText: string) {
     mode = "lower";
     held = false;
     const s = { l: lift };
@@ -2430,30 +2438,22 @@ export function createBarScene(options: SceneOptions): BarScene {
             },
           }
         );
-        if (outcome) {
-          ownDone = true;
-          bodyAfterMine();
-          say(lineText ?? "Bottoms up! Counted", undefined, "good");
-          if (outcome.n === outcome.goal) goalReached();
-          crowdPraise();
-          cracked = 0;
-          drankBefore = true;
-          try {
-            localStorage.setItem(DRANK_KEY, "1");
-          } catch {}
-          tierCheer();
-        } else {
-          extraDrinks++;
-          if (Math.random() < 0.5) bodyAfterMine();
-          if (!reduced) wobble = Math.min(6, wobble + 1.5);
-          say(at(LINES.extra, Math.min(LINES.extra.length - 1, extraDrinks - 1)), "bartender");
-          talk(pick(patrons), pick(LINES.enough), 2000);
-        }
+        ownDone = true;
+        bodyAfterMine();
+        say(lineText, undefined, "good");
+        if (outcome.n === outcome.goal) goalReached();
+        crowdPraise();
+        cracked = 0;
+        drankBefore = true;
+        try {
+          localStorage.setItem(DRANK_KEY, "1");
+        } catch {}
+        tierCheer();
+        // one pint a check-in: the empty glass stays on the coaster until the new day
         later(() => {
-          vol = 1;
+          vol = 0;
           mode = "idle";
           tipText(idleTip());
-          pour(0);
         }, 900);
       },
     });
@@ -2573,7 +2573,24 @@ export function createBarScene(options: SceneOptions): BarScene {
   function refuseLine(): string | null {
     if (barMode === "warmup") return "Warm-up: your pint gets poured on your activation day";
     if (barMode === "backlog") return "Settle the old days first, then I pour";
+    if (barMode === "done-today" || ownDone) return `One pint a check-in, ser. ${nextPintIn()}`;
     return null;
+  }
+  /** One pint a check-in (LC-029): the glass at rest is empty in warm-up and after today's check-in. */
+  function restingEmpty(): boolean {
+    return barMode === "warmup" || barMode === "done-today" || ownDone;
+  }
+  /** Back at rest: refill only when a pint is still due today. */
+  function refill() {
+    vol = restingEmpty() ? 0 : 1;
+    if (vol) pour(0);
+  }
+  /** "Next one in 5h 42m", from tonight's end on this page clock. */
+  function nextPintIn(): string {
+    const left = nightEnd - Date.now();
+    if (!nightEnd || left <= 0) return "Next one when the new day opens";
+    const m = Math.ceil(left / 60_000);
+    return `Next one in ${m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`}`;
   }
   function local(e: PointerEvent): Pt {
     const r = root.getBoundingClientRect();
@@ -2625,9 +2642,8 @@ export function createBarScene(options: SceneOptions): BarScene {
         },
       });
       later(() => {
-        vol = 1;
-        pour(0);
-        tipText("refilled. try bottoms up");
+        refill();
+        if (vol) tipText("refilled. try bottoms up");
       }, 700);
     }
   }
@@ -3038,7 +3054,8 @@ export function createBarScene(options: SceneOptions): BarScene {
   function idleTip(): string {
     if (barMode === "warmup") return "warm-up: pint pours on your activation day";
     if (barMode === "backlog") return "settle first, then we pour";
-    if (barMode === "done-today" || ownDone) return "checked in today. another one? on the house";
+    // the tent card by the glass says it (LC-029)
+    if (barMode === "done-today" || ownDone) return "";
     if (riskOn) return "last call! drink or lose your streak";
     return "drag the pint to your mouth and hold · or hold space";
   }
@@ -3078,12 +3095,9 @@ export function createBarScene(options: SceneOptions): BarScene {
     setMode(next) {
       if (next === barMode) return;
       const wasWarmup = barMode === "warmup";
+      const wasDone = barMode === "done-today";
       barMode = next;
-      if (next === "warmup" && mode === "idle") vol = 0;
-      if (wasWarmup && next !== "warmup" && mode === "idle") {
-        vol = 1;
-        pour(0);
-      }
+      if (mode === "idle" && (restingEmpty() || wasWarmup || wasDone)) refill();
       if (mode === "idle") tipText(idleTip());
     },
     setLines(next) {
@@ -3118,19 +3132,19 @@ export function createBarScene(options: SceneOptions): BarScene {
     newDay() {
       ownDone = false;
       bellRungToday = false;
-      extraDrinks = 0;
       wobble = 0;
       bellPokes = 0;
       queue.length = 0;
       if (mode === "idle") {
-        vol = barMode === "warmup" ? 0 : 1;
+        refill();
         tipText(idleTip());
       }
-      say("gm. New day, bar is open", "bartender");
+      say("gm. New day, fresh pint poured", "bartender");
     },
     checkInSucceeded(outcome, lineText) {
       if (mode !== "wait") {
         ownDone = true;
+        if (mode === "idle") vol = 0;
         say(lineText, undefined, "good");
         return;
       }
@@ -3154,9 +3168,8 @@ export function createBarScene(options: SceneOptions): BarScene {
           say(lineText, "bartender", "error");
           crowdGroan();
           later(() => {
-            vol = barMode === "warmup" ? 0 : 1;
-            pour(0);
             mode = "idle";
+            refill();
             tipText(idleTip());
           }, 700);
         },

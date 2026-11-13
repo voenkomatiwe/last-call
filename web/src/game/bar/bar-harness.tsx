@@ -235,7 +235,16 @@ export function BarHarness() {
         Mode:{" "}
         {MODES.map((m) => (
           <label key={m} style={{ marginRight: 8 }}>
-            <input type="radio" name="mode" checked={mode === m} onChange={() => setMode(m)} /> {m}
+            <input
+              type="radio"
+              name="mode"
+              checked={mode === m}
+              onChange={() => {
+                setMode(m);
+                setCheckedIn(m === "done-today");
+              }}
+            />{" "}
+            {m}
           </label>
         ))}
       </p>

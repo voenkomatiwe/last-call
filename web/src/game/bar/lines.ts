@@ -32,12 +32,6 @@ export const LINES = {
     "Bartender: I'm waiting for the bottom",
     "Leave a sip, lose the streak",
   ],
-  extra: [
-    "Already checked in. This one's on the house",
-    "Bartender: water, maybe?",
-    "One check-in a day. The floor is moving",
-    "No streak for this one, just vibes",
-  ],
   bell: [
     "Don't touch the bell",
     "I said don't touch the bell",
@@ -49,7 +43,6 @@ export const LINES = {
   praise: ["Legend!", "Based", "Respect", "What a chug", "One more on board"],
   after: ["gm, checked in", "+1, streak holds", "Almost at the bell", "Cheers!"],
   groan: ["Ugh!", "Bro", "ngmi", "Weak"],
-  enough: ["He's had enough", "Call him a cab", "Respect, but stop"],
   bless: ["Bless you", "Classy", "Juicy!"],
   fart: ["Ew!", "Who did that?!", "Open a window", "It was the chair", "Check-in with exhaust", "Bartender, the fan!"],
   toasts: ["To the pot!", "Cheers!", "Streak lives!", "WAGMI!"],

@@ -1,13 +1,13 @@
 # Last Call ($LAST)
 
-Last Call is a NEAR memecoin with no keys and a daily game. Every day the community has to hit a
+Last Call is a NEAR memecoin built to run with no keys, and a daily game. Every day the community has to hit a
 check-in goal: hit it and the pot pays everyone who checked in, a random closer wins a jackpot, and
 the streak grows; miss it and part of the pot and of the absentees' stakes burns for good. The
-contract mints nothing after launch and has no access key, so nobody, including us, can change the
-rules or take the pot.
+contract mints nothing after launch, and once its last access key is deleted (see
+[Deployment](#deployment)) nobody, including us, can change the rules or take the pot.
 
 Built for NEAR HACKATHON 2026, memecoins track. All code was written during the hackathon (first
-commit 8 November 2026).
+commit 7 November 2026, 22:26 UTC).
 
 ## Rules
 
@@ -20,10 +20,10 @@ commit 8 November 2026).
 6. **Closers and the hero:** the last 5 check-ins before the goal (at most one per block) are the
    day's closers. One of them, drawn at random in a separate receipt, wins a **jackpot** worth 10
    shares.
-7. **Goal missed:** 5% of the pot burns, every member who did not check in loses 10% of their
-   stake, and the streak resets to zero.
+7. **Goal missed:** 5% of the pot burns, every active member who did not check in loses 10% of
+   their stake, and the streak resets to zero. Members still in warm-up are not slashed.
 8. Members who skip too many days in a row can be **kicked** by anyone. Leaving costs an exit fee
-   unless you checked in today. Rewards are claimed with `claim()`.
+   unless you checked in today or are still in warm-up. Rewards are claimed with `claim()`.
 
 Parameters (`config/params.json`; the live contract returns them from `get_config()`):
 
@@ -93,9 +93,21 @@ is pinned in `contract/rust-toolchain.toml`).
 The track prompt suggests minting rewards when a goal is met. Last Call does the opposite: the
 supply is fixed at launch and half of it is locked in the contract as the pot. Rewards and jackpots
 are transfers out of the pot, and every failed day burns 5% of it, so the supply can only shrink.
-The contract has no mint function and no access key: nobody can create tokens, change parameters or
-upgrade the code. The price is a natural horizon: the pot shrinks with every payout and burn, which
+The contract has no mint function, and after its last access key is deleted nobody can create
+tokens, change parameters or upgrade the code. The price is a natural horizon: the pot shrinks with every payout and burn, which
 is where the name comes from.
+
+## How we differ from the starter idea
+
+What Last Call adds to the track's starter idea of a community check-in goal:
+
+| Aspect | Last Call |
+|---|---|
+| Goal | 60% of the members active that day (at least `min_goal`), fixed when the day opens |
+| Who wins | Everyone who checks in shares the reward; the last 5 check-ins before the goal are the closers, and one of them, drawn in a separate receipt, wins a 10-share jackpot |
+| Cost of skipping | A failed day burns 5% of the pot and 10% of the stake of every active member who skipped |
+| Rewards | Not minted, unlike the prompt's suggestion: they come out of a pot locked at launch, so the supply only shrinks |
+| Evidence | A TypeScript port of the contract's day logic (`sim/engine.ts`) runs 60-day scenarios with farmers, snipers and griefers; it is reviewed against the Rust source, not yet compared with the wasm automatically |
 
 ## Limits
 
@@ -125,7 +137,9 @@ Full simulation results: `bun run sim`, then `out/sim-report.md`.
   in `contract/res/last_call.wasm.sha256`, so the deployed code is the committed wasm. The wasm is
   built reproducibly with `cargo near build reproducible-wasm` (image in `contract/Cargo.toml`).
 - As of 13 November 2026 the testnet account still holds one full-access key; it will be deleted
-  before submission, after which `list-keys` returns nothing.
+  before submission, after which `list-keys` returns nothing. Until then the "no keys" claims above
+  describe the launch state, not the current one: check with
+  `near account list-keys v1.last-call.testnet network-config testnet now`.
 
 ## Repository
 
@@ -156,6 +170,11 @@ Full simulation results: `bun run sim`, then `out/sim-report.md`.
   [Flatulence.wav](https://commons.wikimedia.org/wiki/File:Flatulence.wav) by JohnSumisu (CC BY-SA 3.0);
   [Menselijke wind drietraps.wav](https://commons.wikimedia.org/wiki/File:Menselijke_wind_drietraps.wav) by
   BeatsByDrProcolHarum (CC BY-SA 4.0). The trimmed files are shared under the same licences.
+
+## Team and post
+
+- Team: to be filled in before submission.
+- X post with the video: pending; the link is added here once it is published.
 
 ## License
 

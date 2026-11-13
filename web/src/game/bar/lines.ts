@@ -20,6 +20,8 @@ export const LINES = {
   closer: ["Bottoms up! #N, you're a closer", "#N: closer seat. Pray for hero", "Last call is yours: #N closes"],
   closeGoal: ["You closed the goal. Ring it!", "Goal hit by you. Legend"],
   late: ["Goal's done. Counted, no hero ticket", "Late to the party, still poured"],
+  /** A quiet night (too few members for a goal): the check-in still counts for the streak. */
+  quiet: ["Quiet night, no goal. Your streak still counts", "Just us tonight. Counted, #N"],
   notMouth: [
     "Ser, that's not your mouth",
     "Missed the mouth, missed the check-in",
@@ -103,6 +105,7 @@ export function ownCheckInLine(
   pick: (lines: readonly string[]) => string
 ): string {
   const n = (line: string) => line.replace("#N", `#${result.n}`);
+  if (result.goal === 0) return n(pick(LINES.quiet));
   if (result.n === result.goal) return pick(LINES.closeGoal);
   if (result.n > result.goal) return n(pick(LINES.late));
   if (result.inClosers) return n(pick(LINES.closer));

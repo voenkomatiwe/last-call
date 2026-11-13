@@ -150,6 +150,10 @@ describe("bartender lines", () => {
     expect(ownCheckInLine({ n: 5, goal: 6, inClosers: true }, first)).toBe("Bottoms up! #5, you're a closer");
     expect(ownCheckInLine({ n: 6, goal: 6, inClosers: true }, first)).toBe("You closed the goal. Ring it!");
     expect(ownCheckInLine({ n: 7, goal: 6, inClosers: false }, first)).toBe("Goal's done. Counted, no hero ticket");
+    // a quiet night (contract returns goal 0): not "late", the streak still counts
+    expect(ownCheckInLine({ n: 1, goal: 0, inClosers: false }, first)).toBe(
+      "Quiet night, no goal. Your streak still counts"
+    );
   });
 
   test("contract errors are explained", () => {

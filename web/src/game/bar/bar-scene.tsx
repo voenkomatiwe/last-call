@@ -2,12 +2,19 @@
 
 import "./bar.css";
 
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { CheckInResult } from "../../contract/views";
-import { type BarDay, type BarMode, type BarSnapshot, drunkLevel, sceneEvents } from "./events";
+import { type BarDay, type BarMode, type BarSnapshot, sceneEvents } from "./events";
 import { type BarFacts, bartenderError, chatLines, hintLines, ownCheckInLine } from "./lines";
-import { createBarScene, type BarScene as Engine } from "./scene";
+import { createBarScene, type BarScene as Engine, type FocusTarget } from "./scene";
+import { type PrimaryAction, streakTier } from "./streak-tier";
+
+/** HUD numbers ask the scene to ring their object with this window event (LC-028). */
+export const FOCUS_EVENT = "lc-bar-focus";
+export function focusInBar(target: FocusTarget): void {
+  window.dispatchEvent(new CustomEvent<FocusTarget>(FOCUS_EVENT, { detail: target }));
+}
 
 // The joined player's bar (LC-021). The chain decides; this component only shows it: the mode comes
 // from `get_member`, the crowd from the polled day, and a full "bottoms up" calls `onCheckIn`, which
@@ -25,6 +32,11 @@ export interface BarSceneProps {
   /** Sound settings live next to the wallet (`useBarSettings`); the scene only follows them. */
   readonly sound: boolean;
   readonly bodySounds: boolean;
+  /** When tonight ends, on this page clock (epoch ms), and the night length; drive the clock and the at-risk state. */
+  readonly nightEndsAt: number;
+  readonly nightLengthMs: number;
+  /** The one thing the screen asks for now; only "drink" makes the glass glow. */
+  readonly primary: PrimaryAction;
 }
 
 export function BarScene({
@@ -37,6 +49,9 @@ export function BarScene({
   onCheckIn,
   sound,
   bodySounds,
+  nightEndsAt,
+  nightLengthMs,
+  primary,
 }: BarSceneProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -45,6 +60,7 @@ export function BarScene({
   const tipRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
   const signRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
   const engine = useRef<Engine | null>(null);
   const checkInRef = useRef(onCheckIn);
   checkInRef.current = onCheckIn;
@@ -60,9 +76,10 @@ export function BarScene({
     const tip = tipRef.current;
     const bell = bellRef.current;
     const sign = signRef.current;
-    if (!root || !canvas || !say || !bang || !tip || !bell || !sign) return;
+    const ghost = ghostRef.current;
+    if (!root || !canvas || !say || !bang || !tip || !bell || !sign || !ghost) return;
     const scene = createBarScene({
-      elements: { root, canvas, say, bang, tip, bell, sign },
+      elements: { root, canvas, say, bang, tip, bell, sign, ghost },
       assetBase: "/bar",
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       onFullDrink: () => {
@@ -88,6 +105,34 @@ export function BarScene({
   useEffect(() => {
     engine.current?.setMode(mode);
   }, [mode]);
+
+  // Streak tier: greet on the first value, celebrate a new tier, crack the glass when the streak is lost.
+  const lastStreak = useRef<number | null>(null);
+  useEffect(() => {
+    const scene = engine.current;
+    if (!scene) return;
+    const before = lastStreak.current;
+    lastStreak.current = streak;
+    if (before !== null && before > 0 && streak === 0) scene.streakLost(before);
+    scene.setStreak(streak, accountId);
+  }, [streak, accountId]);
+
+  useEffect(() => {
+    engine.current?.setNight(nightEndsAt, nightLengthMs);
+  }, [nightEndsAt, nightLengthMs]);
+
+  useEffect(() => {
+    engine.current?.setPrimary(primary === "drink");
+  }, [primary]);
+
+  useEffect(() => {
+    const onFocus = (event: Event) => {
+      const target = (event as CustomEvent<FocusTarget>).detail;
+      engine.current?.focus(target);
+    };
+    window.addEventListener(FOCUS_EVENT, onFocus);
+    return () => window.removeEventListener(FOCUS_EVENT, onFocus);
+  }, []);
 
   useEffect(() => {
     engine.current?.setSound(sound);
@@ -117,15 +162,14 @@ export function BarScene({
   }, [day, checkedInToday, accountId]);
 
   const count = own && own.day === day.day ? Math.max(day.count, own.n) : day.count;
-  const drunk = drunkLevel(streak);
-  const style = { "--d": drunk.toFixed(3) } as CSSProperties;
-  const wob = (i: number): CSSProperties => ({
-    animationDelay: `${(-i * 0.37).toFixed(2)}s`,
-    animationDuration: `${(1.6 + (i % 3) * 0.45).toFixed(2)}s`,
-  });
 
+  useEffect(() => {
+    engine.current?.setGoal(count, day.isIdle ? null : day.goal);
+  }, [count, day.goal, day.isIdle]);
+
+  // The drunk sway lives in the canvas only (LC-028): numbers and buttons stay sharp.
   return (
-    <section className={`lc-bar${drunk > 0 ? " lc-bar-drunk" : ""}`} style={style} aria-label="The bar">
+    <section className="lc-bar" data-tier={streakTier(streak).id} aria-label="The bar">
       <div
         ref={rootRef}
         className="lc-bar-scene"
@@ -139,7 +183,7 @@ export function BarScene({
           LAST CALL
         </div>
         <button ref={bellRef} type="button" className="lc-bar-bell" aria-label="Bell">
-          <svg viewBox="0 0 34 40" aria-hidden="true" className="lc-bar-wob" style={wob(0)}>
+          <svg viewBox="0 0 34 40" aria-hidden="true">
             <path d="M17 2v4" stroke="#c9a14a" strokeWidth="2" />
             <path d="M6 30c2-4 2-10 3-14 1-5 4-8 8-8s7 3 8 8c1 4 1 10 3 14z" fill="#d9a441" stroke="#8a6420" />
             <rect x="3" y="29" width="28" height="3" rx="1.5" fill="#b8862c" />
@@ -147,11 +191,11 @@ export function BarScene({
           </svg>
         </button>
         <div className="lc-bar-hud" aria-live="polite">
-          <span className="lc-bar-chip lc-bar-wob" style={wob(1)}>
+          <span className="lc-bar-chip">
             on board <b>{count}</b>
             {day.goal !== null && ` / ${day.goal}`}
           </span>
-          <span className="lc-bar-chip lc-bar-wob" style={wob(2)}>
+          <span className="lc-bar-chip">
             {day.isIdle
               ? "quiet night: too few members"
               : day.goal === null
@@ -160,15 +204,18 @@ export function BarScene({
                   ? `${day.goal - count} to the bell`
                   : "goal hit!"}
           </span>
-          <span className="lc-bar-chip lc-bar-wob" style={wob(3)}>
+          <span className="lc-bar-chip">
             streak <b>{streak}</b>
           </span>
+        </div>
+        <div ref={ghostRef} className="lc-bar-ghost" aria-hidden="true">
+          <span className="lc-bar-ghost-dot" />
         </div>
         <div ref={sayRef} className="lc-bar-say" role="status" aria-live="polite" />
         <div ref={bangRef} className="lc-bar-bang" aria-hidden="true">
           BANG!
         </div>
-        <div ref={tipRef} className="lc-bar-tip lc-bar-wob" style={wob(4)} />
+        <div ref={tipRef} className="lc-bar-tip" />
       </div>
     </section>
   );

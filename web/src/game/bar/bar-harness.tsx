@@ -30,6 +30,9 @@ export function BarHarness() {
   const [mode, setMode] = useState<BarMode>("ready");
   const [checkedIn, setCheckedIn] = useState(false);
   const [streak, setStreak] = useState(5);
+  const [leftPct, setLeftPct] = useState(60);
+  const [nightEndsAt, setNightEndsAt] = useState(() => Date.now() + 360_000);
+  const NIGHT_MS = 600_000;
   const [next, setNext] = useState<Next>("ok");
   const [log, setLog] = useState<string[]>([]);
   const facts = useMemo(() => ({ closersK: 3, slashPct: 10 }), []);
@@ -77,6 +80,9 @@ export function BarHarness() {
       onCheckIn={onCheckIn}
       sound={settings.sound}
       bodySounds={settings.bodySounds}
+      nightEndsAt={nightEndsAt}
+      nightLengthMs={NIGHT_MS}
+      primary={mode === "backlog" ? "settle" : mode === "ready" ? "drink" : "claim"}
     />
   );
 
@@ -121,7 +127,26 @@ export function BarHarness() {
       <p>
         <label>
           Streak {streak}{" "}
-          <input type="range" min={0} max={30} value={streak} onChange={(e) => setStreak(Number(e.target.value))} />
+          <input type="range" min={0} max={35} value={streak} onChange={(e) => setStreak(Number(e.target.value))} />
+        </label>{" "}
+        <button type="button" onClick={() => setStreak(0)}>
+          Lose streak
+        </button>
+      </p>
+      <p>
+        <label>
+          Night left {leftPct}%{" "}
+          <input
+            type="range"
+            min={1}
+            max={100}
+            value={leftPct}
+            onChange={(e) => {
+              const pct = Number(e.target.value);
+              setLeftPct(pct);
+              setNightEndsAt(Date.now() + (NIGHT_MS * pct) / 100);
+            }}
+          />
         </label>
       </p>
       <ol reversed aria-label="Log">
@@ -136,7 +161,7 @@ export function BarHarness() {
     return (
       <main>
         <BarHall
-          data={harnessData(day, checkedIn, streak, readAt)}
+          data={harnessData(day, checkedIn, streak, readAt, nightEndsAt - readAt, mode)}
           kickable={["sleepy.test"]}
           accountId="you.test"
           busy={undefined}

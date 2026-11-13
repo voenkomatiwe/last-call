@@ -53,6 +53,25 @@ export const LINES = {
   bless: ["Bless you", "Classy", "Juicy!"],
   fart: ["Ew!", "Who did that?!", "Open a window", "It was the chair", "Check-in with exhaust", "Bartender, the fan!"],
   toasts: ["To the pot!", "Cheers!", "Streak lives!", "WAGMI!"],
+  /** Greeting when the bar opens, by streak tier (streak-tier.ts): novice … owner. */
+  tierGreet: [
+    "New face? Grab the pint, drink to the bottom",
+    "gm. Back again?",
+    "The usual, regular?",
+    "Your mug's ready, local",
+    "Legend in the house!",
+    "Boss is here. Everyone, stand up",
+  ],
+  /** Said when the player reaches a tier: novice … owner. */
+  tierUp: [
+    "",
+    "Guest now. Come back tomorrow",
+    "Regular! You get a mug",
+    "Local! The bar lights up for you",
+    "LEGEND. Your name goes on the wall",
+    "OWNER. The crown is yours",
+  ],
+  chorus: ["EYYY!", "Cheers!", "There they are!", "WAGMI!"],
 } as const;
 
 /** Lines the bartender drops when nothing happens; they depend on the deployment. */

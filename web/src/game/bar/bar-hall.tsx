@@ -4,11 +4,29 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { QuickCheckIn } from "../../checkin/use-checkin-key";
 import { kickCall, retryPickHeroCall } from "../../contract/calls";
-import { type ActionState, accountActions } from "../actions";
+import { type ActionState, accountActions, hasBacklog } from "../actions";
 import { formatCountdown, formatUnits, LAST_DECIMALS } from "../format";
 import type { GameData } from "../use-game";
+import { focusInBar } from "./bar-scene";
 import type { BarSettings } from "./bar-settings";
+import { barMode } from "./events";
 import { Icon, type IconName } from "./icons";
+import {
+  formatMultiplier,
+  nightsToNextTier,
+  type PrimaryAction,
+  primaryAction,
+  streakAtRisk,
+  streakMultiplierBps,
+  streakTier,
+} from "./streak-tier";
+
+/** What the screen asks for now (LC-028): one thing glows, the rest stays calm. */
+export function hallPrimary(data: GameData): PrimaryAction {
+  const member = data.account?.member;
+  if (!member) return "none";
+  return primaryAction({ mode: barMode(member, hasBacklog(data.game)), claimable: member.pendingClaimable });
+}
 
 // The room around the bar scene (LC-021, user's choice "A · HUD like Reigns", 14 Nov): one scene in the
 // middle, a thin HUD on top with the four numbers that matter (time left, on board / goal, your
@@ -59,9 +77,11 @@ export function BarHall(props: Props) {
   const [sheet, setSheet] = useState<SheetId | null>(null);
   const member = data.account?.member;
   const claimable = member?.pendingClaimable ?? 0n;
+  const primary = hallPrimary(data);
+  const tabGlows = primary === "claim" || primary === "settle";
 
   return (
-    <div className="lc-hall">
+    <div className="lc-hall" data-tier={streakTier(member?.currentPersonalStreak ?? 0).id}>
       <Hud data={data} accountId={accountId} settings={settings} onDisconnect={onDisconnect} />
       <div className="lc-hall-stage">{props.stage}</div>
       {message && (
@@ -81,7 +101,7 @@ export function BarHall(props: Props) {
         <NoShowsSheet {...props} />
       </aside>
       <nav className="lc-dock" aria-label="Bar menu">
-        <button type="button" className="lc-dock-btn" onClick={() => setSheet("tab")}>
+        <button type="button" className={`lc-dock-btn${tabGlows ? " is-primary" : ""}`} onClick={() => setSheet("tab")}>
           <Icon name="bill" /> Your tab
           {claimable > 0n && <b className="lc-badge">+{shortLast(claimable)}</b>}
         </button>
@@ -130,29 +150,67 @@ function Hud({
   const count = day.stale ? 0 : day.count;
   const toBell = day.isIdle || day.stale ? null : Math.max(0, day.goal - day.count);
   const done = member?.checkedInToday ?? false;
+  const nightMs = data.game.config.dayLengthS * 1000;
   // Urgent in the last 15% of the night, whatever the night length (10 minutes on the sandbox).
-  const urgent = !done && left < data.game.config.dayLengthS * 1000 * 0.15;
+  const urgent = !done && left < nightMs * 0.15;
+  const streak = member?.currentPersonalStreak ?? 0;
+  const risk = member ? streakAtRisk({ streak, checkedInToday: done, msLeft: left, dayLengthMs: nightMs }) : false;
+  const warmupNights = member && !member.isActive ? Math.max(0, member.activationDay - state.today) : null;
+  // Tonight's rewards use the community streak counting tonight (contract/API.md, Parameters).
+  const multiplier = formatMultiplier(
+    streakMultiplierBps(state.streak + 1, data.game.config.streakStepBps, data.game.config.streakCap)
+  );
+  const fire =
+    warmupNights !== null
+      ? {
+          cls: " is-off",
+          title: `Warm-up: your first pint in ${warmupNights} night(s)`,
+          small: (
+            <>
+              <Icon name="lock" />
+              {warmupNights}
+            </>
+          ),
+        }
+      : done
+        ? { cls: " is-done", title: "Checked in tonight. Streak safe", small: <Icon name="check" /> }
+        : risk
+          ? { cls: " is-danger", title: "Night is ending: drink now or the streak is lost", small: "now!" }
+          : { cls: " is-risk", title: "Not checked in tonight: drink to keep the streak", small: "drink" };
 
   return (
     <header className="lc-hud">
       <div className="lc-hud-stats">
-        <span className={`lc-stat${urgent ? " is-urgent" : ""}`} title="Time left tonight">
+        <button
+          type="button"
+          className={`lc-stat${urgent ? " is-urgent" : ""}`}
+          title="Time left tonight"
+          onClick={() => focusInBar("clock")}
+        >
           <Icon name="alarm" /> <b>{formatCountdown(left)}</b>
-        </span>
-        <span className="lc-stat" title={toBell === null ? "Quiet night" : `${toBell} more to ring the bell`}>
+        </button>
+        <button
+          type="button"
+          className="lc-stat"
+          title={toBell === null ? "Quiet night" : `Goal: ${day.goal}. ${toBell} more to ring the bell`}
+          onClick={() => focusInBar("goal")}
+        >
           <Icon name="users" /> <b>{count}</b>
           {toBell !== null && <small>/{day.goal}</small>}
-        </span>
-        <span
-          className={`lc-stat${done ? " is-lit" : " is-risk"}`}
-          title={done ? "Checked in tonight" : "Not checked in tonight: drink to keep the streak"}
+        </button>
+        <button type="button" className={`lc-stat${fire.cls}`} title={fire.title} onClick={() => focusInBar("streak")}>
+          <Icon name="fire" /> <b>{streak}</b>
+          <small>{fire.small}</small>
+        </button>
+        <button
+          type="button"
+          className="lc-stat lc-stat-pot"
+          title={`The pot. A successful night pays ${multiplier} the base reward (bar streak ${state.streak})`}
+          onClick={() => focusInBar("pot")}
         >
-          <Icon name="fire" /> <b>{member?.currentPersonalStreak ?? 0}</b>
-          <small>{done ? <Icon name="check" /> : "drink!"}</small>
-        </span>
-        <span className="lc-stat lc-stat-pot" title="The pot">
           <Icon name="moneyBag" /> <b>{shortLast(state.pot)}</b>
-        </span>
+          <small>{multiplier}</small>
+        </button>
       </div>
       <AccountMenu accountId={accountId} settings={settings} onDisconnect={onDisconnect} />
     </header>
@@ -208,7 +266,14 @@ function TabSheet({ data, busy, quick, keys, onSend, onEnableQuick }: Props) {
   const member = account?.member;
   const actions = accountActions(data.game, account);
   const claim = actions.find((a) => a.id === "claim");
-  const more = actions.filter((a) => a.id === "leave" || a.id === "settle");
+  const primary = hallPrimary(data);
+  // Settling is the one thing to do while old nights wait: it leaves "More" and stands first.
+  const settle = primary === "settle" ? actions.find((a) => a.id === "settle") : undefined;
+  const more = actions.filter((a) => a.id === "leave" || (a.id === "settle" && !settle));
+  const streak = member?.currentPersonalStreak ?? 0;
+  const tier = streakTier(streak);
+  const toNext = nightsToNextTier(streak);
+  const tierFill = tier.next === null ? 1 : (streak - tier.from) / (tier.next - tier.from);
   const text = (action: ActionState) =>
     action.id === "claim" && member
       ? `Claim ${shortLast(member.pendingClaimable)} LAST`
@@ -249,11 +314,25 @@ function TabSheet({ data, busy, quick, keys, onSend, onEnableQuick }: Props) {
           </div>
         </dl>
       )}
+      {member && (
+        <div className="lc-tier" data-tier={tier.id}>
+          <b>{tier.name}</b>
+          <span className="lc-tier-bar" aria-hidden="true">
+            <i style={{ width: `${Math.round(tierFill * 100)}%` }} />
+          </span>
+          <small>
+            {toNext === null
+              ? "top of the bar"
+              : `${toNext} night${toNext === 1 ? "" : "s"} to ${streakTier(tier.next ?? 0).name}`}
+          </small>
+        </div>
+      )}
       {member?.kickableFromDay != null && !member.checkedInToday && (
         <p className="lc-warn">Skip until night {member.kickableFromDay} and anyone can kick you.</p>
       )}
       <div className="lc-row-buttons">
-        {claim && button(claim, "lc-btn lc-btn-amber")}
+        {settle && button(settle, "lc-btn lc-btn-amber")}
+        {claim && button(claim, primary === "claim" ? "lc-btn lc-btn-amber" : "lc-btn")}
         {member && quick.status === "off" && (
           <button type="button" className="lc-btn" disabled={busy !== undefined} onClick={onEnableQuick}>
             {busy === "Enable one-tap check-in" ? "Enabling…" : "Skip wallet popups"}

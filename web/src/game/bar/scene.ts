@@ -6,9 +6,38 @@
 // Browser-only: import it from a client component, inside an effect.
 
 import { gsap } from "gsap";
-
-import type { BarMode } from "./events";
+import { type BarMode, drunkLevel } from "./events";
 import { cheerFor, LINES } from "./lines";
+import {
+  burstConfetti,
+  type Confetto,
+  drawClock,
+  drawCracks,
+  drawCrown,
+  drawFocus,
+  drawGlassBadge,
+  drawGoalRail,
+  drawHalo,
+  drawJar,
+  drawPlaque,
+  drawRimGlow,
+  drawTierWash,
+  goalRailBox,
+  gradeFilter,
+  stepConfetti,
+} from "./scene-extras";
+import { streakTier } from "./streak-tier";
+
+/** What a HUD number points at in the scene. */
+export type FocusTarget = "glass" | "streak" | "goal" | "pot" | "clock";
+const FOCUS_LABEL: Record<FocusTarget, string> = {
+  glass: "your pint",
+  streak: "your streak",
+  goal: "goal",
+  pot: "pot",
+  clock: "time left",
+};
+const DRANK_KEY = "lc-bar-drank";
 
 export interface SceneElements {
   /** The scene box: pointer and keyboard input, size. */
@@ -22,6 +51,8 @@ export interface SceneElements {
   readonly tip: HTMLElement;
   readonly bell: HTMLElement;
   readonly sign: HTMLElement;
+  /** Ghost hand that shows the gesture (LC-028); optional. */
+  readonly ghost?: HTMLElement;
 }
 
 export interface SceneOptions {
@@ -50,6 +81,17 @@ export interface BarScene {
   checkInSucceeded(outcome: CheckInOutcome, line: string): void;
   checkInFailed(line: string): void;
   say(text: string, who?: string): void;
+  /** Personal streak and the player name (plaque, glass initial): sets the tier, greets or celebrates. */
+  setStreak(streak: number, name: string): void;
+  /** When tonight ends (epoch ms, this page clock) and how long a night is. */
+  setNight(endsAt: number, lengthMs: number): void;
+  setGoal(count: number, goal: number | null): void;
+  /** The personal streak dropped to zero between polls. */
+  streakLost(previous: number): void;
+  /** Ring the object a HUD number stands for. */
+  focus(target: FocusTarget): void;
+  /** Whether the glass is the one thing to touch now (else it does not glow). */
+  setPrimary(glass: boolean): void;
   destroy(): void;
 }
 
@@ -176,6 +218,27 @@ export function createBarScene(options: SceneOptions): BarScene {
   const drops: { x: number; y: number; y0: number; vy: number; r: number; a: number }[] = [];
   const bokeh: { x: number; y: number; r: number; c: string; ph: number }[] = [];
   const labels: { text: string; x: number; y: number; a: number }[] = [];
+  // LC-028: streak tier, night clock, goal rail, focus ring, ghost hand, confetti
+  let tier = -1;
+  let drunk = 0;
+  let playerName = "";
+  let nightEnd = 0;
+  let nightLen = 0;
+  let riskK = 0;
+  let riskOn = false;
+  let goalCount = 0;
+  let goalN: number | null = null;
+  let cracked = 0;
+  let primaryGlass = true;
+  let focusOn: { target: FocusTarget; until: number } | null = null;
+  let idleSince = performance.now();
+  let ghostShown = false;
+  let lastFilter = "";
+  let drankBefore = false;
+  try {
+    drankBefore = localStorage.getItem(DRANK_KEY) === "1";
+  } catch {}
+  const confetti: Confetto[] = [];
 
   // ---------- patrons ----------
   const patrons: Patron[] = [
@@ -840,15 +903,27 @@ export function createBarScene(options: SceneOptions): BarScene {
 
   function drawBarWorld(t: number) {
     ctx.save();
-    const wob = wobble > 0 && !reduced ? Math.sin(t / 420) * wobble * 0.03 : 0;
+    const sway = Math.max(wobble, drunk * 2);
+    const wob = sway > 0 && !reduced ? Math.sin(t / 420) * sway * 0.03 : 0;
     ctx.translate(cw / 2 + shake.x, ch / 2 + shake.y);
     ctx.rotate(wob);
     ctx.translate(-cw / 2, -ch / 2);
     drawRoom(t);
+    drawWall(t);
     for (const p of patrons) drawPatron(p, t);
     drawBarTop(t);
+    drawCounterProps(t);
     drawBubbles(t);
+    if (primaryGlass && barMode === "ready" && !ownDone && mode === "idle") {
+      const r = restGlass();
+      drawHalo(ctx, r.x, r.y, r.h * 1.1, t);
+    }
     rimNow = drawMine(t);
+    if (tier >= 5 && lift < 0.2) {
+      const r = restGlass();
+      drawCrown(ctx, r.x, r.y - r.h * 0.95, r.h * 0.22, t);
+    }
+    drawFocusRing(t);
     ctx.restore();
     const vg = ctx.createRadialGradient(
       cw / 2,
@@ -862,6 +937,75 @@ export function createBarScene(options: SceneOptions): BarScene {
     vg.addColorStop(1, "rgba(8,2,6,0.55)");
     ctx.fillStyle = vg;
     ctx.fillRect(-ox, 0, fw, ch);
+    drawTierWash(ctx, Math.max(0, tier), -ox, fw, ch);
+  }
+
+  // ---------- LC-028: tier props, clock, goal rail, focus ----------
+  /** The player glass at rest: centre and height, for the halo, the ghost hand and the focus ring. */
+  function restGlass() {
+    const h = 138 * (cw / 360);
+    const by = ch * 0.93;
+    return { x: coasterX >= 0 ? coasterX : hx * cw, y: by - h * 0.5, h };
+  }
+  const CLOCK = { x: 0.13, y: 0.145 };
+  const JAR = { x: 0.12, h: 0.085 };
+  function clockLeft(): number {
+    if (!nightLen || !nightEnd) return 1;
+    return Math.max(0, Math.min(1, (nightEnd - Date.now()) / nightLen));
+  }
+  function drawWall(t: number) {
+    drawClock(ctx, cw * CLOCK.x, ch * CLOCK.y, Math.max(14, cw * 0.045), clockLeft(), riskK > 0.5, t);
+    drawPlaque(ctx, cw * 0.84, ch * 0.15, cw * 0.24, playerName, tier, F_BODY);
+  }
+  function drawCounterProps(t: number) {
+    drawJar(ctx, cw * JAR.x, ch * (BAR + 0.03), ch * JAR.h, F_BODY);
+    drawGoalRail(ctx, goalRailBox(cw, ch, BAR), goalCount, goalN, t);
+  }
+  function drawFocusRing(t: number) {
+    if (!focusOn) return;
+    const k = (focusOn.until - t) / 2200;
+    if (k <= 0) {
+      focusOn = null;
+      return;
+    }
+    const target = focusOn.target;
+    const label = FOCUS_LABEL[target];
+    if (target === "glass" || target === "streak") {
+      const r = restGlass();
+      drawFocus(ctx, r.x, r.y, r.h * 0.55, r.h * 0.7, label, k, t, F_BODY);
+    } else if (target === "goal") {
+      const b = goalRailBox(cw, ch, BAR);
+      drawFocus(ctx, (b.x0 + b.x1) / 2, b.base - b.h / 2, (b.x1 - b.x0) * 0.56, b.h * 0.95, label, k, t, F_BODY);
+    } else if (target === "pot") {
+      const h = ch * JAR.h;
+      drawFocus(ctx, cw * JAR.x, ch * (BAR + 0.03) - h / 2, h * 0.6, h * 0.75, label, k, t, F_BODY);
+    } else {
+      const r = Math.max(14, cw * 0.045);
+      drawFocus(ctx, cw * CLOCK.x, ch * CLOCK.y, r * 1.5, r * 1.5, label, k, t, F_BODY);
+    }
+  }
+  function updateGhost() {
+    const ghost = options.elements.ghost;
+    if (!ghost) return;
+    const now = performance.now();
+    const show =
+      primaryGlass &&
+      barMode === "ready" &&
+      !ownDone &&
+      mode === "idle" &&
+      !held &&
+      cw > 0 &&
+      (!drankBefore || now - idleSince > 6000);
+    if (show) {
+      const r = restGlass();
+      ghost.style.left = `${(ox + r.x).toFixed(1)}px`;
+      ghost.style.top = `${(r.y + r.h * 0.15).toFixed(1)}px`;
+      ghost.style.setProperty("--lift", `${(-ch * LIFT_TRAVEL).toFixed(1)}px`);
+    }
+    if (show !== ghostShown) {
+      ghostShown = show;
+      ghost.classList.toggle("is-on", show);
+    }
   }
 
   // ---------- patrons drawing (effigy units: viewBox 184..1124 x 210..1340) ----------
@@ -1389,6 +1533,9 @@ export function createBarScene(options: SceneOptions): BarScene {
     }
     ctx.stroke();
     ctx.restore();
+    drawRimGlow(ctx, tier, rim, lw);
+    drawGlassBadge(ctx, tier, ringAt(bot, rim, 0.42), g.r * 0.4, (playerName[0] ?? "?").toUpperCase(), F_BODY);
+    drawCracks(ctx, bot, rim, cracked);
     // a full glass at rest wears its head over the rim, with a blob running down the front
     const k = clamp((vol - 0.9) / 0.1, 0, 1) * (1 - ease(g.tilt / 0.7));
     if (k > 0.01 && sTop >= 0.999) {
@@ -1662,8 +1809,19 @@ export function createBarScene(options: SceneOptions): BarScene {
       drawBarWorld(t);
       drawFlood(t, rimNow);
       drawDrops();
-      cv.style.filter =
-        wobble > 0 && !reduced ? `blur(${(wobble * 0.4).toFixed(2)}px) saturate(${1 + wobble * 0.15})` : "";
+      if (confetti.length) stepConfetti(ctx, confetti, ch, dt, Math.max(6, cw / 45));
+      const risk = tier > 0 && !ownDone && barMode === "ready" && nightLen > 0 && clockLeft() < 0.15 && clockLeft() > 0;
+      riskK += ((risk ? 1 : 0) - riskK) * Math.min(1, dt * 3);
+      if (risk !== riskOn) {
+        riskOn = risk;
+        if (mode === "idle") tipText(idleTip());
+      }
+      const filter = gradeFilter(Math.max(0, tier), reduced ? 0 : riskK, wobble > 0 && !reduced ? wobble * 0.4 : 0, t);
+      if (filter !== lastFilter) {
+        lastFilter = filter;
+        cv.style.filter = filter;
+      }
+      updateGhost();
     }
     raf = requestAnimationFrame(frame);
   }
@@ -1702,6 +1860,45 @@ export function createBarScene(options: SceneOptions): BarScene {
       }
     });
     talk(pick(patrons), pick(LINES.groan), 1600);
+  }
+
+  /** The crowd answers the player own check-in louder as the tier grows (LC-028). */
+  function raiseGlasses(lines: readonly string[]) {
+    patrons.forEach((p, i) => {
+      later(
+        () => {
+          if (p.busy) return;
+          p.busy = true;
+          p.face = "big";
+          p.faceUntil = performance.now() + 1400;
+          talk(p, at(lines, i), 1500);
+          if (reduced) {
+            later(() => {
+              p.busy = false;
+            }, 900);
+            return;
+          }
+          gsap
+            .timeline()
+            .to(p, { c: 1, duration: 0.3, ease: "back.out(2)" })
+            .call(() => clink(0.4, pan(p)))
+            .to(p, {
+              c: 0,
+              duration: 0.35,
+              delay: 0.5,
+              onComplete: () => {
+                p.busy = false;
+              },
+            });
+        },
+        250 + i * 120
+      );
+    });
+  }
+  function tierCheer() {
+    if (tier >= 3) raiseGlasses(LINES.chorus);
+    else if (tier >= 2) raiseGlasses(LINES.toasts);
+    if (tier >= 4 && !reduced) burstConfetti(confetti, cw, ch, 70);
   }
 
   // ---------- my drink ----------
@@ -1815,6 +2012,12 @@ export function createBarScene(options: SceneOptions): BarScene {
           say(lineText ?? "Bottoms up! Counted");
           if (outcome.n === outcome.goal) goalReached();
           crowdPraise();
+          cracked = 0;
+          drankBefore = true;
+          try {
+            localStorage.setItem(DRANK_KEY, "1");
+          } catch {}
+          tierCheer();
         } else {
           extraDrinks++;
           if (Math.random() < 0.5) bodyAfterMine();
@@ -1954,6 +2157,7 @@ export function createBarScene(options: SceneOptions): BarScene {
   }
   function onPointerDown(e: PointerEvent) {
     ensureAudio();
+    idleSince = performance.now();
     if (mode !== "idle") return;
     const refuse = refuseLine();
     if (refuse) {
@@ -2009,6 +2213,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     e.preventDefault();
     if (e.repeat) return;
     ensureAudio();
+    idleSince = performance.now();
     if (mode !== "idle") return;
     const refuse = refuseLine();
     if (refuse) {
@@ -2388,6 +2593,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (barMode === "warmup") return "warm-up: pint pours on your activation day";
     if (barMode === "backlog") return "settle first, then we pour";
     if (barMode === "done-today" || ownDone) return "checked in today. another one? on the house";
+    if (riskOn) return "last call! drink or lose your streak";
     return "drag the pint to your mouth and hold · or hold space";
   }
 
@@ -2504,6 +2710,44 @@ export function createBarScene(options: SceneOptions): BarScene {
       });
     },
     say,
+    setStreak(streak, name) {
+      playerName = name;
+      drunk = reduced ? 0 : drunkLevel(streak);
+      const next = streakTier(streak).index;
+      const first = tier < 0;
+      const rose = !first && next > tier;
+      tier = next;
+      if (first) {
+        later(() => say(at(LINES.tierGreet, next), "bartender"), 900);
+      } else if (rose) {
+        later(() => {
+          say(at(LINES.tierUp, next), "bartender");
+          if (next >= 2) raiseGlasses(LINES.chorus);
+          if (next >= 3 && !reduced) burstConfetti(confetti, cw, ch, 90);
+        }, 1600);
+      }
+      if (mode === "idle") tipText(idleTip());
+    },
+    setNight(endsAt, lengthMs) {
+      nightEnd = endsAt;
+      nightLen = lengthMs;
+    },
+    setGoal(count, goal) {
+      goalCount = count;
+      goalN = goal;
+    },
+    streakLost(previous) {
+      cracked = 1;
+      thud(0.4, 0);
+      crowdGroan();
+      later(() => say(`Streak ${previous} is gone. Start a new one tonight`, "bartender"), 400);
+    },
+    focus(target) {
+      focusOn = { target, until: performance.now() + 2200 };
+    },
+    setPrimary(glass) {
+      primaryGlass = glass;
+    },
     destroy() {
       destroyed = true;
       cancelAnimationFrame(raf);

@@ -193,43 +193,128 @@
   color: var(--muted);
 }
 
-/* Drunk UI: past the streak threshold, chips and buttons blur, get beer smears and sway. --d is 0..1. */
-.lc-bar-wob {
-  transform-origin: 50% 60%;
+/* LC-028: the streak tier changes the neon; numbers and buttons never blur (the sway is in the canvas). */
+.lc-bar[data-tier="novice"] .lc-bar-sign {
+  color: #b9a6b2;
+  text-shadow: 0 0 4px #ff4fb855;
+  animation: lc-sign-flicker 3.2s steps(1) infinite;
 }
-.lc-bar-wob:not(svg) {
-  position: relative;
+.lc-bar[data-tier="guest"] .lc-bar-sign {
+  text-shadow:
+    0 0 4px var(--neon),
+    0 0 10px #ff2d9e88;
 }
-.lc-bar-tip.lc-bar-wob {
+.lc-bar[data-tier="local"] .lc-bar-sign {
+  text-shadow:
+    0 0 4px var(--neon),
+    0 0 18px var(--neon),
+    0 0 46px #ff2d9e;
+}
+.lc-bar[data-tier="legend"] .lc-bar-sign,
+.lc-bar[data-tier="owner"] .lc-bar-sign {
+  color: #fff3c4;
+  text-shadow:
+    0 0 4px #ffd36b,
+    0 0 18px #ffb84a,
+    0 0 44px #ff4fb8;
+}
+.lc-bar[data-tier="owner"] .lc-bar-sign {
+  animation: lc-sign-glow 2.4s ease-in-out infinite alternate;
+}
+@keyframes lc-sign-flicker {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  8% {
+    opacity: 0.25;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  47% {
+    opacity: 0.4;
+  }
+  49% {
+    opacity: 0.85;
+  }
+}
+@keyframes lc-sign-glow {
+  to {
+    filter: brightness(1.35) hue-rotate(-12deg);
+  }
+}
+
+/* Ghost hand: a finger dot that lifts the pint and holds, shown until the first drink and after idling. */
+.lc-bar-ghost {
   position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 2;
 }
-.lc-bar-drunk .lc-bar-wob {
-  animation: lc-bar-wob 2s ease-in-out infinite alternate;
-  filter: blur(calc(var(--d, 0) * 0.55px));
+.lc-bar-ghost.is-on {
+  opacity: 1;
 }
-.lc-bar-drunk .lc-bar-wob:not(svg)::after {
+.lc-bar-ghost-dot {
+  position: absolute;
+  left: -22px;
+  top: -22px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #ffffffcc;
+  box-shadow:
+    0 0 0 6px #ffffff40,
+    0 6px 18px #0008;
+  animation: lc-ghost 3.2s ease-in-out infinite;
+}
+.lc-bar-ghost-dot::after {
   content: "";
   position: absolute;
-  inset: -2px;
-  border-radius: 999px;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 45% 70% at 28% 40%, rgba(255, 186, 80, calc(var(--d, 0) * 0.3)), transparent 70%),
-    radial-gradient(ellipse 35% 60% at 78% 68%, rgba(255, 244, 214, calc(var(--d, 0) * 0.2)), transparent 70%);
+  inset: -12px;
+  border-radius: 50%;
+  border: 4px solid #ffb84a;
+  clip-path: inset(0 0 100% 0);
+  animation: lc-ghost-hold 3.2s linear infinite;
 }
-@keyframes lc-bar-wob {
+@keyframes lc-ghost {
   0% {
-    transform: translate(calc(var(--d, 0) * -2.5px), calc(var(--d, 0) * 1px)) rotate(calc(var(--d, 0) * -3.5deg));
+    transform: translateY(0) scale(1.15);
+    opacity: 0;
   }
-  50% {
-    transform: translate(calc(var(--d, 0) * 1.5px), calc(var(--d, 0) * -2px)) rotate(calc(var(--d, 0) * 1.5deg));
+  10% {
+    transform: translateY(0) scale(0.9);
+    opacity: 1;
+  }
+  38% {
+    transform: translateY(var(--lift, -200px)) scale(0.9);
+  }
+  85% {
+    transform: translateY(var(--lift, -200px)) scale(0.9);
+    opacity: 1;
   }
   100% {
-    transform: translate(calc(var(--d, 0) * 3px), calc(var(--d, 0) * 1px)) rotate(calc(var(--d, 0) * 4deg));
+    transform: translateY(var(--lift, -200px)) scale(1.2);
+    opacity: 0;
+  }
+}
+@keyframes lc-ghost-hold {
+  0%,
+  38% {
+    clip-path: inset(0 0 100% 0);
+  }
+  85%,
+  100% {
+    clip-path: inset(0 0 0 0);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .lc-bar-drunk .lc-bar-wob {
+  .lc-bar[data-tier] .lc-bar-sign,
+  .lc-bar-ghost-dot,
+  .lc-bar-ghost-dot::after {
     animation: none;
   }
 }
@@ -933,4 +1018,144 @@
 }
 .lc-stat.is-lit small .lc-icon {
   color: #8fe3a8;
+}
+
+/* LC-028: HUD numbers are buttons that ring their object in the scene. One colour code everywhere:
+   amber = your move, green = done, red = at risk, grey = nothing to do. */
+.lc-hall .lc-stat-pot small {
+  color: #ffd36b;
+  font-weight: 700;
+}
+.lc-hall .lc-tier small {
+  color: #c9aebd;
+}
+.lc-hall button.lc-stat {
+  color: inherit;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+.lc-hall button.lc-stat:hover {
+  border-color: #ffb84a66;
+}
+.lc-hall button.lc-stat:focus-visible {
+  outline: 2px solid #ffb84a;
+  outline-offset: 2px;
+}
+.lc-hall .lc-stat.is-done {
+  border-color: #8fe3a888;
+  box-shadow: 0 0 14px #8fe3a833;
+}
+.lc-hall .lc-stat.is-done > .lc-icon {
+  color: #ff7a3d;
+}
+.lc-hall .lc-stat.is-risk {
+  border-color: #ffb84a88;
+}
+.lc-hall .lc-stat.is-danger {
+  border-color: #ff4d3d;
+  background: #ff4d3d22;
+  animation: lc-danger 0.9s ease-in-out infinite alternate;
+}
+.lc-hall .lc-stat.is-danger small,
+.lc-hall .lc-stat.is-danger > .lc-icon {
+  color: #ff6b5e;
+  font-weight: 900;
+}
+.lc-hall .lc-stat.is-off {
+  opacity: 0.7;
+}
+.lc-hall .lc-stat.is-off > .lc-icon,
+.lc-hall .lc-stat.is-off small {
+  color: #9a8590;
+}
+@keyframes lc-danger {
+  to {
+    box-shadow: 0 0 18px #ff4d3d88;
+  }
+}
+.lc-hall .lc-dock-btn.is-primary {
+  border-color: #ffb84a;
+  background: #3a2410;
+  box-shadow: 0 0 0 0 #ffb84a88;
+  animation: lc-primary 1.4s ease-out infinite;
+}
+.lc-hall .lc-dock-btn.is-primary .lc-icon {
+  color: #ffb84a;
+}
+@keyframes lc-primary {
+  to {
+    box-shadow: 0 0 0 12px #ffb84a00;
+  }
+}
+
+/* Streak tier in the tab: name, progress to the next tier. */
+.lc-hall .lc-tier {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #ffffff0a;
+}
+.lc-hall .lc-tier-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #ffffff14;
+  overflow: hidden;
+}
+.lc-hall .lc-tier-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ffb84a, #ff4fb8);
+}
+.lc-hall .lc-tier[data-tier="novice"] b {
+  color: #b9a6b2;
+}
+.lc-hall .lc-tier[data-tier="regular"] b {
+  color: #ffb84a;
+}
+.lc-hall .lc-tier[data-tier="local"] b {
+  color: #ff79c6;
+}
+.lc-hall .lc-tier[data-tier="legend"] b,
+.lc-hall .lc-tier[data-tier="owner"] b {
+  color: #ffd36b;
+}
+.lc-hall .lc-tier[data-tier="legend"] .lc-tier-bar i,
+.lc-hall .lc-tier[data-tier="owner"] .lc-tier-bar i {
+  background: linear-gradient(90deg, #ffd36b, #fff3c4);
+}
+
+/* The hall around the scene follows the tier: cold and dim for a new face, warm, neon, then gold. */
+.lc-hall[data-tier="novice"] {
+  background-color: #0d0a12;
+}
+.lc-hall[data-tier="local"] .lc-hud .lc-stat {
+  border-color: #ff4fb855;
+}
+.lc-hall[data-tier="legend"] .lc-hud .lc-stat,
+.lc-hall[data-tier="owner"] .lc-hud .lc-stat {
+  border-color: #ffd36b66;
+}
+.lc-hall[data-tier="owner"] .lc-hud {
+  background: linear-gradient(180deg, #ffd36b14, transparent);
+}
+
+.lc-hall .lc-stat.is-done small .lc-icon {
+  color: #8fe3a8;
+}
+.lc-hall .lc-stat.is-off small .lc-icon {
+  width: 1em;
+  height: 1em;
+  color: #9a8590;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-hall .lc-stat.is-danger,
+  .lc-hall .lc-dock-btn.is-primary {
+    animation: none;
+  }
 }

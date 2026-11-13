@@ -12,7 +12,7 @@ import type { NearNetwork } from "../near/near-config";
 import { createViewProvider } from "../near/view";
 import { useWallet } from "../wallet/use-wallet";
 import { type ActionState, accountActions, hasBacklog } from "./actions";
-import { BarHall } from "./bar/bar-hall";
+import { BarHall, hallPrimary } from "./bar/bar-hall";
 import { BarScene } from "./bar/bar-scene";
 import { type BarSettings, useBarSettings } from "./bar/bar-settings";
 import { barDay, barMode } from "./bar/events";
@@ -187,6 +187,9 @@ function Bar({
       onCheckIn={onCheckIn}
       sound={settings.sound}
       bodySounds={settings.bodySounds}
+      nightEndsAt={data.readAt + data.game.state.msToDayEnd}
+      nightLengthMs={config.dayLengthS * 1000}
+      primary={hallPrimary(data)}
     />
   );
 }

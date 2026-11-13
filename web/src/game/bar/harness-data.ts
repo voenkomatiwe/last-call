@@ -1,6 +1,6 @@
 import type { ConfigView, DaySummary, MemberView, StateView } from "../../contract/views";
 import type { GameData } from "../use-game";
-import type { BarDay } from "./events";
+import type { BarDay, BarMode } from "./events";
 
 // Synthetic contract views for `/dev/bar?hall`: the hall's layout without a wallet or a chain.
 
@@ -52,12 +52,19 @@ function history(today: number): DaySummary[] {
   });
 }
 
-export function harnessData(day: BarDay, checkedIn: boolean, streak: number, readAt: number): GameData {
+export function harnessData(
+  day: BarDay,
+  checkedIn: boolean,
+  streak: number,
+  readAt: number,
+  msToDayEnd = 7 * 60_000 + 42_000,
+  mode: BarMode = "ready"
+): GameData {
   const state: StateView = {
     today: day.day,
-    lastSettled: day.day - 1,
-    pendingDays: 0,
-    msToDayEnd: 7 * 60_000 + 42_000,
+    lastSettled: mode === "backlog" ? day.day - 3 : day.day - 1,
+    pendingDays: mode === "backlog" ? 99 : 0,
+    msToDayEnd,
     pot: 482_019_334n * LAST,
     reserved: 0n,
     stakePool: 0n,
@@ -77,7 +84,7 @@ export function harnessData(day: BarDay, checkedIn: boolean, streak: number, rea
   const member: MemberView = {
     stake: 100_000n * LAST,
     joinDay: 1,
-    activationDay: 3,
+    activationDay: mode === "warmup" ? day.day + 2 : 3,
     lastCheckin: checkedIn ? day.day : day.day - 1,
     resolvedThrough: day.day,
     claimable: 0n,
@@ -89,7 +96,7 @@ export function harnessData(day: BarDay, checkedIn: boolean, streak: number, rea
     checkinKey: null,
     effectiveStake: 100_000n * LAST,
     pendingClaimable: 7_140n * LAST,
-    isActive: true,
+    isActive: mode !== "warmup",
     checkedInToday: checkedIn,
     canCheckInToday: !checkedIn,
     currentPersonalStreak: streak,

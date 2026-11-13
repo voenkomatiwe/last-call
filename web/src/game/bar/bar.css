@@ -293,6 +293,39 @@
   }
 }
 
+/* LC-025: a failed day kills a sign letter for good; one that dies while you watch flickers out first. */
+.lc-bar .lc-bar-sign .is-dead,
+.lc-bar .lc-bar-sign .is-dying {
+  color: #3a2833;
+  text-shadow: none;
+}
+.lc-bar .lc-bar-sign .is-dying {
+  animation: lc-letter-die 1.6s steps(1) 0.4s both;
+}
+@keyframes lc-letter-die {
+  0%,
+  20%,
+  45%,
+  60% {
+    color: #ffe0f2;
+    text-shadow:
+      0 0 4px var(--neon),
+      0 0 14px var(--neon);
+  }
+  10%,
+  30%,
+  52%,
+  100% {
+    color: #3a2833;
+    text-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-bar .lc-bar-sign .is-dying {
+    animation: none;
+  }
+}
+
 /* Ghost hand: a finger dot that lifts the pint and holds, shown until the first drink and after idling. */
 .lc-bar-ghost {
   position: absolute;

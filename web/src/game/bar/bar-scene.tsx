@@ -4,10 +4,21 @@ import "./bar.css";
 
 import { useEffect, useRef, useState } from "react";
 
-import type { CheckInResult } from "../../contract/views";
+import type { CheckInResult, DaySummary } from "../../contract/views";
+import { shortLast } from "../format";
 import type { BoardText } from "../street/street-art";
-import { type BarDay, type BarMode, type BarSnapshot, sceneEvents } from "./events";
-import { type BarFacts, bartenderError, chatLines, hintLines, ownCheckInLine } from "./lines";
+import {
+  type BarDay,
+  type BarMode,
+  type BarSnapshot,
+  deadLetters,
+  failedDays,
+  historyEvents,
+  SIGN,
+  sceneEvents,
+  seatClosers,
+} from "./events";
+import { type BarFacts, bartenderError, chatLines, heroLine, hintLines, ownCheckInLine, settledLine } from "./lines";
 import { createBarScene, type BarScene as Engine, type FocusTarget, type Place } from "./scene";
 import { type PrimaryAction, streakTier } from "./streak-tier";
 
@@ -16,6 +27,18 @@ export const FOCUS_EVENT = "lc-bar-focus";
 export function focusInBar(target: FocusTarget): void {
   window.dispatchEvent(new CustomEvent<FocusTarget>(FOCUS_EVENT, { detail: target }));
 }
+
+/** The claim from the tab plays in the bar: the bartender opens the till and hands the coins over (LC-025). */
+export const CLAIM_EVENT = "lc-bar-claim";
+export interface ClaimMoment {
+  readonly state: "pending" | "paid" | "failed";
+  readonly line: string;
+}
+export function claimInBar(moment: ClaimMoment): void {
+  window.dispatchEvent(new CustomEvent<ClaimMoment>(CLAIM_EVENT, { detail: moment }));
+}
+
+const pickLine = (lines: readonly string[]) => lines[(Math.random() * lines.length) | 0] ?? "";
 
 // The joined player's bar (LC-021). The chain decides; this component only shows it: the mode comes
 // from `get_member`, the crowd from the polled day, and a full "bottoms up" calls `onCheckIn`, which
@@ -44,6 +67,10 @@ export interface BarSceneProps {
   readonly board: BoardText;
   /** The entry walk finished and the camera settled at the bar. */
   readonly onEntered?: () => void;
+  /** Settled days (`get_history`): new ones and hero draws become moments; failures kill sign letters. */
+  readonly history: readonly DaySummary[];
+  /** How full the pot jar is, 0..1 (`jarLevel`). */
+  readonly jar: number;
 }
 
 export function BarScene({
@@ -62,6 +89,8 @@ export function BarScene({
   place,
   board,
   onEntered,
+  history,
+  jar,
 }: BarSceneProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -99,10 +128,7 @@ export function BarScene({
         checkInRef.current().then(
           (result) => {
             setOwn({ day: result.day, n: result.n });
-            scene.checkInSucceeded(
-              result,
-              ownCheckInLine(result, (lines) => lines[(Math.random() * lines.length) | 0] ?? "")
-            );
+            scene.checkInSucceeded(result, ownCheckInLine(result, pickLine));
           },
           (error: unknown) => scene.checkInFailed(bartenderError(error))
         );
@@ -183,6 +209,59 @@ export function BarScene({
     }
   }, [day, checkedInToday, accountId]);
 
+  // LC-025: closers on the patrons' glasses, the jar, settled days and hero draws, the claim.
+  useEffect(() => {
+    const seats = seatClosers(day.closers, accountId);
+    engine.current?.setClosers(seats.others, seats.self);
+  }, [day.closers, accountId]);
+
+  useEffect(() => {
+    engine.current?.setJar(jar);
+  }, [jar]);
+
+  /** Each open day's closers as last seen, so a later hero draw spins over the right names. */
+  const closersByDay = useRef(new Map<number, readonly string[]>());
+  if (day.closers.length) {
+    closersByDay.current.set(day.day, day.closers);
+    for (const d of closersByDay.current.keys()) if (d < day.day - 8) closersByDay.current.delete(d);
+  }
+  const previousHistory = useRef<readonly DaySummary[] | null>(null);
+  useEffect(() => {
+    const events = historyEvents(previousHistory.current, history);
+    previousHistory.current = history;
+    const scene = engine.current;
+    if (!scene) return;
+    for (const event of events) {
+      if (event.kind === "day-settled") {
+        const { day: d, outcome } = event.summary;
+        if (outcome !== "Idle") scene.daySettled(outcome, settledLine(d, outcome, pickLine));
+      } else {
+        const self = event.hero === accountId;
+        const candidates = closersByDay.current.get(event.day) ?? [event.hero];
+        scene.heroPicked(
+          candidates,
+          event.hero,
+          accountId,
+          heroLine(event.day, event.hero, self, shortLast(event.jackpot), pickLine)
+        );
+      }
+    }
+  }, [history, accountId]);
+
+  useEffect(() => {
+    const onClaim = (event: Event) => {
+      const { state, line } = (event as CustomEvent<ClaimMoment>).detail;
+      engine.current?.claim(state, line);
+    };
+    window.addEventListener(CLAIM_EVENT, onClaim);
+    return () => window.removeEventListener(CLAIM_EVENT, onClaim);
+  }, []);
+
+  // Failed days kill the sign's letters for good; letters that die while the page is open flicker out.
+  const dead = deadLetters(failedDays(history));
+  const deadAtStart = useRef<ReadonlySet<number> | null>(null);
+  if (deadAtStart.current === null) deadAtStart.current = dead;
+
   const count = own && own.day === day.day ? Math.max(day.count, own.n) : day.count;
 
   useEffect(() => {
@@ -202,7 +281,15 @@ export function BarScene({
       >
         <canvas ref={canvasRef} />
         <div ref={signRef} className="lc-bar-sign" aria-hidden="true">
-          LAST CALL
+          {[...SIGN].map((letter, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: the sign's letters are fixed; the index is the letter.
+              key={i}
+              className={dead.has(i) ? (deadAtStart.current?.has(i) ? "is-dead" : "is-dying") : undefined}
+            >
+              {letter}
+            </span>
+          ))}
         </div>
         <button ref={bellRef} type="button" className="lc-bar-bell" aria-label="Bell">
           <svg viewBox="0 0 34 40" aria-hidden="true">

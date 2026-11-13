@@ -1,7 +1,7 @@
 // Pure mapping from polled contract snapshots to what the bar scene shows (LC-021). No DOM, no
 // Next.js: the scene engine and the tests import it.
 
-import type { MemberView, OpenDayView, StateView } from "../../contract/views";
+import type { DaySummary, MemberView, OpenDayView, StateView } from "../../contract/views";
 
 /** What the player's glass does now. */
 export type BarMode =
@@ -93,4 +93,66 @@ export const DRUNK_FROM_STREAK = 7;
 /** 0 below the threshold, then 0.35 rising to 1 over ten more days. */
 export function drunkLevel(streak: number, from = DRUNK_FROM_STREAK): number {
   return streak >= from ? Math.min(1, 0.35 + (0.65 * (streak - from)) / 10) : 0;
+}
+
+// ---------- LC-025: the day's moments from settled days ----------
+
+export type HistoryEvent =
+  /** A day was settled since the previous poll: coins on success, smoke and a dead letter on failure. */
+  | { readonly kind: "day-settled"; readonly summary: DaySummary }
+  /** A settled day's hero draw landed (`hero` turned from `null` to an account). */
+  | { readonly kind: "hero-picked"; readonly day: number; readonly hero: string; readonly jackpot: bigint };
+
+/**
+ * Moments between two polls of `get_history` (newest first, any order accepted). The first poll
+ * produces none. A day newer than every day seen before is "settled"; a hero shows up either on a
+ * day seen without one, or already drawn on a newly settled day. Idle days settle quietly.
+ */
+export function historyEvents(prev: readonly DaySummary[] | null, next: readonly DaySummary[]): HistoryEvent[] {
+  if (!prev) return [];
+  const before = new Map(prev.map((d) => [d.day, d]));
+  const newest = prev.reduce((max, d) => Math.max(max, d.day), -1);
+  const events: HistoryEvent[] = [];
+  for (const d of [...next].sort((a, b) => a.day - b.day)) {
+    const old = before.get(d.day);
+    if (!old && d.day > newest && d.outcome !== "Idle") events.push({ kind: "day-settled", summary: d });
+    if (d.hero !== null && (old ? old.hero === null : d.day > newest)) {
+      events.push({ kind: "hero-picked", day: d.day, hero: d.hero, jackpot: d.jackpot });
+    }
+  }
+  return events;
+}
+
+/** The neon sign; failed days kill its letters one by one, in this order, for good. */
+export const SIGN = "LAST CALL";
+const DEATH_ORDER = [5, 8, 1, 6, 3, 7, 0, 2] as const;
+
+/** Failed days in the read history. The history is capped (`history_len`), so this is "for good" within it. */
+export function failedDays(history: readonly DaySummary[]): number {
+  return history.filter((d) => d.outcome === "Fail").length;
+}
+
+/** Indexes into `SIGN` whose letters are dead after `fails` failed days. */
+export function deadLetters(fails: number): ReadonlySet<number> {
+  return new Set(DEATH_ORDER.slice(0, Math.max(0, fails)));
+}
+
+/** The pot at launch: `initial_supply × pot_bps / 10 000`. */
+export function initialPot(initialSupply: bigint, potBps: number): bigint {
+  return (initialSupply * BigInt(potBps)) / 10_000n;
+}
+
+/** How full the coin jar is, 0..1, as the pot against its launch size; a non-empty pot never looks empty. */
+export function jarLevel(pot: bigint, initial: bigint): number {
+  if (pot <= 0n) return 0;
+  if (initial <= 0n || pot >= initial) return 1;
+  return Math.max(0.04, Number((pot * 10_000n) / initial) / 10_000);
+}
+
+/** Today's closers as the bar seats them: the player apart, everyone else oldest first. */
+export function seatClosers(
+  closers: readonly string[],
+  self: string | null
+): { readonly others: readonly string[]; readonly self: boolean } {
+  return { others: closers.filter((c) => c !== self), self: self !== null && closers.includes(self) };
 }

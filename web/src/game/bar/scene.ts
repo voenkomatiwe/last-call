@@ -27,6 +27,18 @@ import {
   gradeFilter,
   stepConfetti,
 } from "./scene-extras";
+import {
+  burstCoins,
+  burstSmoke,
+  type Coin,
+  drawSpotlight,
+  drawTag,
+  type Puff,
+  shortName,
+  stepCoins,
+  stepSmoke,
+  strokeNeon,
+} from "./scene-moments";
 import { streakTier } from "./streak-tier";
 
 /** Where the camera is: in front of the pub (not joined yet) or inside at the bar. */
@@ -108,6 +120,16 @@ export interface BarScene {
   setPlace(place: Place): void;
   /** Tonight's goal and the stake for the chalk board on the street. */
   setBoard(board: BoardText): void;
+  /** Today's closers: others get a neon rim and a tag on a patron's glass; `self` rims the player's. */
+  setClosers(others: readonly string[], self: boolean): void;
+  /** How full the pot jar is, 0..1. */
+  setJar(level: number): void;
+  /** A day settled: coins from the jar on success; smoke on failure (the sign letter dies in the DOM). */
+  daySettled(outcome: "Success" | "Fail", line: string): void;
+  /** Spotlight roulette over `candidates` (that day's closers), landing on `hero`. */
+  heroPicked(candidates: readonly string[], hero: string, self: string, line: string): void;
+  /** The player's claim: pending (bartender opens the till), paid (coins handed over), or failed. */
+  claim(state: "pending" | "paid" | "failed", line: string): void;
   destroy(): void;
 }
 
@@ -256,6 +278,15 @@ export function createBarScene(options: SceneOptions): BarScene {
     drankBefore = localStorage.getItem(DRANK_KEY) === "1";
   } catch {}
   const confetti: Confetto[] = [];
+  // LC-025: the day's moments
+  let closerSeats: (string | null)[] = [];
+  let selfCloser = false;
+  let jarLevel = 1;
+  const coins: Coin[] = [];
+  const smoke: Puff[] = [];
+  /** The hero spotlight: where it points now, its name tag, strength, and whether it landed. */
+  const spot = { x: 0, name: "", k: 0, landed: false };
+  let frameDt = 0;
   // LC-024: the street in front of the pub, the entry walk, and the camera settling in the bar
   let place: Place | null = null;
   const street: StreetState = { door: 0, zoom: 0, reveal: 0 };
@@ -1200,8 +1231,130 @@ export function createBarScene(options: SceneOptions): BarScene {
     drawPlaque(ctx, cw * 0.84, ch * 0.15, cw * 0.24, playerName, tier, F_BODY);
   }
   function drawCounterProps(t: number) {
-    drawJar(ctx, cw * JAR.x, ch * (BAR + 0.03), ch * JAR.h, F_BODY);
+    drawJar(ctx, cw * JAR.x, ch * (BAR + 0.03), ch * JAR.h, F_BODY, jarLevel);
     drawGoalRail(ctx, goalRailBox(cw, ch, BAR), goalCount, goalN, t);
+    drawMoments(t);
+  }
+  // ---------- LC-025: closers, hero spotlight, coins and smoke ----------
+  const TAG_Y = BAR - 0.13;
+  function jarTop() {
+    return { x: cw * JAR.x, y: ch * (BAR + 0.03 - JAR.h) };
+  }
+  function drawMoments(_t: number) {
+    const size = Math.max(9, cw * 0.026);
+    patrons.forEach((p, i) => {
+      const name = closerSeats[i];
+      if (name && !(spot.k > 0 && spot.landed)) drawTag(ctx, p.x * cw, ch * TAG_Y, shortName(name, 12), size, F_MONO);
+    });
+    if (spot.k > 0) {
+      drawSpotlight(ctx, spot.x, ch * BAR, cw * 0.11, ch, spot.k);
+      if (spot.name)
+        drawTag(
+          ctx,
+          spot.x,
+          ch * TAG_Y,
+          spot.landed ? `HERO ${shortName(spot.name, 12)}` : shortName(spot.name, 12),
+          size * (spot.landed ? 1.15 : 1),
+          F_MONO,
+          spot.landed ? "#ffd36b" : "#ff4fb8"
+        );
+    }
+    const scale = ch * 0.25;
+    if (smoke.length) stepSmoke(ctx, smoke, scale, frameDt);
+    if (coins.length) stepCoins(ctx, coins, scale, frameDt, Math.max(4, cw * 0.014));
+  }
+  /** Where a closer stands for the spotlight: the player's glass, or a patron. */
+  function seatX(name: string, self: string, i: number): number {
+    if (name === self) return restGlass().x;
+    const seat = closerSeats.indexOf(name);
+    const p = patrons[seat >= 0 ? seat : i % patrons.length] as Patron;
+    return p.x * cw;
+  }
+  let spotRun = 0;
+  function heroPicked(candidates: readonly string[], hero: string, self: string, line: string) {
+    const run = ++spotRun;
+    const list = candidates.includes(hero) ? [...candidates] : [...candidates, hero];
+    const stops = list.map((name, i) => ({ name, x: seatX(name, self, i) }));
+    const win = stops.findIndex((s) => s.name === hero);
+    const land = () => {
+      if (run !== spotRun) return;
+      const w = stops[win] as (typeof stops)[number];
+      spot.x = w.x;
+      spot.name = w.name;
+      spot.landed = true;
+      spot.k = 1;
+      bellRing(0.6);
+      say(line, "bartender", "good");
+      if (hero === self) burstConfetti(confetti, cw, ch, reduced ? 0 : 70);
+      const p = patrons.find((q) => Math.abs(q.x * cw - w.x) < 1);
+      if (p && !p.busy) {
+        p.face = "big";
+        p.faceUntil = performance.now() + 2500;
+      }
+      later(() => {
+        if (run !== spotRun) return;
+        if (reduced) spot.k = 0;
+        else
+          gsap.to(spot, {
+            k: 0,
+            duration: 0.8,
+            onComplete: () => {
+              spot.name = "";
+            },
+          });
+      }, 6000);
+    };
+    spot.landed = false;
+    if (reduced || stops.length < 2) {
+      land();
+      return;
+    }
+    // the light hops from closer to closer, slowing down, for about three seconds
+    spot.k = 1;
+    const hops = stops.length * 3 + win + 1;
+    let at = 0;
+    for (let h = 0; h < hops; h++) {
+      const s = stops[h % stops.length] as (typeof stops)[number];
+      const isLast = h === hops - 1;
+      later(() => {
+        if (run !== spotRun) return;
+        spot.x = s.x;
+        spot.name = s.name;
+        if (!isLast) tick(h / hops);
+        else land();
+      }, at);
+      at += 70 + 380 * (h / hops) ** 2.2;
+    }
+  }
+  function tick(k: number) {
+    clink(0.15 + 0.1 * k, 0);
+  }
+  function daySettled(outcome: "Success" | "Fail", line: string) {
+    const top = jarTop();
+    const scale = ch * 0.25;
+    if (outcome === "Success") {
+      if (!reduced) burstCoins(coins, top, 14, scale);
+      later(() => clink(0.4, 0), 100);
+      say(line, "bartender", "good");
+    } else {
+      if (!reduced) burstSmoke(smoke, top, 10, scale);
+      thud(0.3, 0);
+      say(line, "bartender", "warn");
+    }
+  }
+  function claimMoment(state: "pending" | "paid" | "failed", line: string) {
+    if (state === "pending") {
+      say(line, "bartender");
+      return;
+    }
+    if (state === "failed") {
+      say(line, "bartender", "error");
+      return;
+    }
+    const r = restGlass();
+    if (!reduced) burstCoins(coins, jarTop(), 10, ch * 0.25, { x: r.x, y: r.y + r.h * 0.45 });
+    for (let i = 0; i < 4; i++) later(() => clink(0.25, 0), 700 + i * 90);
+    say(line, "bartender", "good");
   }
   function drawFocusRing(t: number) {
     if (!focusOn) return;
@@ -1500,6 +1653,13 @@ export function createBarScene(options: SceneOptions): BarScene {
       ctx.rotate(th);
       ctx.translate(-E0.x, -E0.y);
       pint(GLASSC.x + CO.x, GLASSC.y + CO.y + breathe, p.vol, th, t);
+      if (closerSeats[patrons.indexOf(p)]) {
+        ctx.save();
+        ctx.translate(GLASSC.x + CO.x, GLASSC.y + CO.y + breathe);
+        pintPath();
+        strokeNeon(ctx, 30, t);
+        ctx.restore();
+      }
       ctx.drawImage(p.armC, 184 - PAD, 210 - PAD + breathe, 940 + PAD * 2, 1130 + PAD * 2);
       ctx.restore();
     }
@@ -1777,6 +1937,11 @@ export function createBarScene(options: SceneOptions): BarScene {
     ctx.stroke();
     ctx.restore();
     drawRimGlow(ctx, tier, rim, lw);
+    if (selfCloser) {
+      ctx.beginPath();
+      ctx.ellipse(rim.cx, rim.cy, rim.rx, rim.ry, 0, 0, 7);
+      strokeNeon(ctx, lw * 1.2, t);
+    }
     drawGlassBadge(ctx, tier, ringAt(bot, rim, 0.42), g.r * 0.4, (playerName[0] ?? "?").toUpperCase(), F_BODY);
     drawCracks(ctx, bot, rim, cracked);
     // a full glass at rest wears its head over the rim, with a blob running down the front
@@ -1987,6 +2152,7 @@ export function createBarScene(options: SceneOptions): BarScene {
     if (destroyed) return;
     const dt = Math.min(0.033, (t - last) / 1000);
     last = t;
+    frameDt = dt;
     lift += (liftTarget - lift) * Math.min(1, dt * 14);
     hx += (hxTarget - hx) * Math.min(1, dt * 12);
     const lv = (lift - lastLift) / Math.max(dt, 0.001);
@@ -3054,6 +3220,18 @@ export function createBarScene(options: SceneOptions): BarScene {
     setBoard(board) {
       streetArt.setBoard(board);
     },
+    setClosers(others, self) {
+      // the most recent closers take the seats; the seat order follows the patrons left to right
+      const shown = others.slice(-patrons.length);
+      closerSeats = patrons.map((_, i) => shown[i] ?? null);
+      selfCloser = self;
+    },
+    setJar(level) {
+      jarLevel = clamp(level, 0, 1);
+    },
+    daySettled,
+    heroPicked,
+    claim: claimMoment,
     destroy() {
       destroyed = true;
       cancelAnimationFrame(raf);

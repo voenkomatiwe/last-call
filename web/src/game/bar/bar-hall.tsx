@@ -5,7 +5,10 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { QuickCheckIn } from "../../checkin/use-checkin-key";
 import { kickCall, retryPickHeroCall } from "../../contract/calls";
 import { type ActionState, accountActions, hasBacklog } from "../actions";
-import { formatCountdown, formatUnits, LAST_DECIMALS } from "../format";
+import { formatCountdown, shortLast } from "../format";
+
+export { shortLast };
+
 import type { GameData } from "../use-game";
 import { focusInBar } from "./bar-scene";
 import type { BarSettings } from "./bar-settings";
@@ -35,16 +38,6 @@ export function hallPrimary(data: GameData): PrimaryAction {
 
 type Send = (label: string, call: ActionState["call"]) => void;
 type SheetId = "tab" | "nights" | "noshows";
-
-/** 482,019,334 LAST → "482M"; small amounts keep two decimals. */
-export function shortLast(amount: bigint): string {
-  if (amount === 0n) return "0";
-  const whole = Number(formatUnits(amount, LAST_DECIMALS, 0).replaceAll(",", ""));
-  if (whole >= 1e9) return `${(whole / 1e9).toFixed(1)}B`;
-  if (whole >= 1e6) return `${(whole / 1e6).toFixed(1)}M`;
-  if (whole >= 1e3) return `${(whole / 1e3).toFixed(1)}K`;
-  return formatUnits(amount, LAST_DECIMALS, whole >= 100 ? 0 : 2);
-}
 
 function useNow(intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now());

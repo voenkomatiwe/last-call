@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { QuickCheckIn } from "../../checkin/use-checkin-key";
-import type { CheckInResult } from "../../contract/views";
+import type { CheckInResult, DaySummary } from "../../contract/views";
 import { BarHall } from "./bar-hall";
-import { BarScene } from "./bar-scene";
+import { BarScene, claimInBar } from "./bar-scene";
 import { useBarSettings } from "./bar-settings";
 import type { BarDay, BarMode } from "./events";
 import { harnessData } from "./harness-data";
+import { claimError, claimedLine, MOMENT_LINES } from "./lines";
 
 // `/dev/bar`: the bar against a simulated chain, to check the scene, the gesture, and every
 // outcome without a wallet. The real page wires the same component to the contract.
@@ -78,6 +79,56 @@ export function BarHarness() {
     note(`${k} other check-in(s)`);
   };
 
+  // LC-025: settled days, hero draws, the pot, the claim
+  const [history, setHistory] = useState<DaySummary[]>(() => harnessData(day, false, 5, 0).history.slice());
+  const [potPct, setPotPct] = useState(96);
+  const [settledClosers, setSettledClosers] = useState<Record<number, readonly string[]>>({});
+  const settle = (outcome: "Success" | "Fail") => {
+    const d = day;
+    const goal = d.goal ?? 6;
+    setHistory((h) => [
+      {
+        day: d.day,
+        outcome,
+        goal,
+        count: outcome === "Success" ? Math.max(d.count, goal) : Math.min(d.count, goal - 1),
+        streakAfter: 0,
+        perShare: outcome === "Success" ? 2_380n * 10n ** 18n : 0n,
+        jackpot: outcome === "Success" ? 23_810n * 10n ** 18n : 0n,
+        hero: null,
+        potBurned: outcome === "Fail" ? 24_100_000n * 10n ** 18n : 0n,
+        stakeSlashed: 0n,
+        potAfter: 0n,
+      },
+      ...h,
+    ]);
+    setSettledClosers((c) => ({ ...c, [d.day]: d.closers }));
+    if (outcome === "Fail") setPotPct((p) => Math.max(0, p - 5));
+    setDay((x) => ({ ...x, day: x.day + 1, count: 0, closers: [] }));
+    setCheckedIn(false);
+    setMode((m) => (m === "done-today" ? "ready" : m));
+    note(`night ${d.day} settled: ${outcome}`);
+  };
+  const drawHero = (self: boolean) => {
+    const target = history.find((h) => h.outcome === "Success" && h.hero === null);
+    if (!target) {
+      note("no hero draw pending (settle a successful night first)");
+      return;
+    }
+    const pool = settledClosers[target.day] ?? [];
+    const hero = self ? "you.test" : (pool.filter((c) => c !== "you.test")[0] ?? "bot-9.test");
+    setHistory((h) => h.map((x) => (x.day === target.day ? { ...x, hero } : x)));
+    note(`hero of night ${target.day}: ${hero}`);
+  };
+  const claimDemo = (ok: boolean) => {
+    claimInBar({ state: "pending", line: MOMENT_LINES.claiming[0] });
+    note(`claim sent (${ok ? "ok" : "rejected"})`);
+    setTimeout(() => {
+      if (ok) claimInBar({ state: "paid", line: claimedLine("7.1K", (l) => l[0] ?? "") });
+      else claimInBar({ state: "failed", line: claimError(new Error("User rejected the request")) });
+    }, 1200);
+  };
+
   const settings = useBarSettings();
   const [hall, setHall] = useState(false);
   const [readAt] = useState(() => Date.now());
@@ -105,6 +156,8 @@ export function BarHarness() {
         note("entered");
         onEntered();
       }}
+      history={history}
+      jar={potPct / 100}
     />
   );
 
@@ -129,6 +182,32 @@ export function BarHarness() {
         >
           New day
         </button>
+      </p>
+      <p>
+        <button type="button" onClick={() => settle("Success")}>
+          Settle: goal hit
+        </button>{" "}
+        <button type="button" onClick={() => settle("Fail")}>
+          Settle: failed
+        </button>{" "}
+        <button type="button" onClick={() => drawHero(false)}>
+          Draw hero
+        </button>{" "}
+        <button type="button" onClick={() => drawHero(true)}>
+          Draw hero: me
+        </button>
+      </p>
+      <p>
+        <button type="button" onClick={() => claimDemo(true)}>
+          Claim: paid
+        </button>{" "}
+        <button type="button" onClick={() => claimDemo(false)}>
+          Claim: rejected
+        </button>{" "}
+        <label>
+          Pot {potPct}%{" "}
+          <input type="range" min={0} max={100} value={potPct} onChange={(e) => setPotPct(Number(e.target.value))} />
+        </label>
       </p>
       <p>
         Place:{" "}
@@ -205,7 +284,7 @@ export function BarHarness() {
     return (
       <main>
         <BarHall
-          data={harnessData(day, checkedIn, streak, readAt, nightEndsAt - readAt, mode)}
+          data={{ ...harnessData(day, checkedIn, streak, readAt, nightEndsAt - readAt, mode), history }}
           kickable={["sleepy.test"]}
           accountId="you.test"
           busy={undefined}
@@ -214,7 +293,7 @@ export function BarHarness() {
           stage={scene}
           keys={<p>No admin key (simulated)</p>}
           settings={settings}
-          onSend={(label) => note(`send: ${label}`)}
+          onSend={(label, call) => (call?.methodName === "claim" ? claimDemo(true) : note(`send: ${label}`))}
           onEnableQuick={() => note("enable one-tap")}
           onDisconnect={() => note("disconnect")}
           street={hallStreet}

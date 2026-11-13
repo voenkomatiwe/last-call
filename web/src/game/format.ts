@@ -39,3 +39,13 @@ export function formatCountdown(ms: number): string {
 export function formatBps(bps: number): string {
   return `${Number((bps / 100).toFixed(2))}%`;
 }
+
+/** 482,019,334 LAST → "482.0M"; small amounts keep two decimals. */
+export function shortLast(amount: bigint): string {
+  if (amount === 0n) return "0";
+  const whole = Number(formatUnits(amount, LAST_DECIMALS, 0).replaceAll(",", ""));
+  if (whole >= 1e9) return `${(whole / 1e9).toFixed(1)}B`;
+  if (whole >= 1e6) return `${(whole / 1e6).toFixed(1)}M`;
+  if (whole >= 1e3) return `${(whole / 1e3).toFixed(1)}K`;
+  return formatUnits(amount, LAST_DECIMALS, whole >= 100 ? 0 : 2);
+}

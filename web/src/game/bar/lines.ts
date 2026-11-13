@@ -135,3 +135,54 @@ export function bartenderError(error: unknown): string {
   if (/allowance/i.test(text)) return "The check-in key ran out of gas. Use the wallet";
   return `Not counted: ${text.length > 90 ? `${text.slice(0, 90)}…` : text}`;
 }
+
+// ---------- LC-025: settled days, the hero, the claim ----------
+
+export const MOMENT_LINES = {
+  success: ["Night N settled. Rewards poured, WAGMI", "Night N: goal held. Coins for everyone on board"],
+  fail: ["Night N failed. Pot burns, a letter dies", "Night N: ngmi. The sign loses a letter"],
+  heroSelf: ["YOU are the hero of night N! Jackpot: J", "Spotlight's on you, ser. J LAST, night N"],
+  heroOther: ["Hero of night N: H. Jackpot J", "H takes the night N jackpot. J LAST"],
+  claiming: ["Counting your coins…", "One sec, opening the till…"],
+  claimed: ["Here's your A LAST, ser", "A LAST, straight from the till"],
+} as const;
+
+const fill = (line: string, values: Record<string, string>) => line.replace(/\b[NJHA]\b/g, (key) => values[key] ?? key);
+
+/** The bartender on a newly settled day. */
+export function settledLine(day: number, outcome: "Success" | "Fail", pick: (l: readonly string[]) => string): string {
+  return fill(pick(outcome === "Success" ? MOMENT_LINES.success : MOMENT_LINES.fail), { N: String(day) });
+}
+
+/** The bartender when the spotlight stops; `jackpot` is already formatted. */
+export function heroLine(
+  day: number,
+  hero: string,
+  self: boolean,
+  jackpot: string,
+  pick: (l: readonly string[]) => string
+): string {
+  return fill(pick(self ? MOMENT_LINES.heroSelf : MOMENT_LINES.heroOther), { N: String(day), H: hero, J: jackpot });
+}
+
+/** Why a claim failed, in the bartender's words. */
+export function claimError(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  const code = contractErrorCode(text);
+  if (code === "ERR_BACKLOG") return "Settle the old days first, then I open the till";
+  if (code === "ERR_NOT_MEMBER") return "You're not on the list. Nothing to pay";
+  if (code === "ERR_NOTHING_TO_CLAIM") return "Your tab is empty. Nothing to pay yet";
+  if (code) return `Till's stuck: ${code}`;
+  if (/reject|cancel|denied|declined|closed/i.test(text)) return "Wallet didn't sign. Coins stay in the till";
+  return `Till's stuck: ${text.length > 90 ? `${text.slice(0, 90)}…` : text}`;
+}
+
+/** The bartender handing over a claim; `amount` is already formatted. */
+export function claimedLine(amount: string, pick: (l: readonly string[]) => string): string {
+  return fill(pick(MOMENT_LINES.claimed), { A: amount });
+}
+
+/** What `claim()` paid, from its `U128` result; `fallback` when the wallet returns nothing readable. */
+export function claimedAmount(result: unknown, fallback: bigint): bigint {
+  return typeof result === "string" && /^\d+$/.test(result) ? BigInt(result) : fallback;
+}

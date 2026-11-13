@@ -14,9 +14,10 @@ import { useWallet } from "../wallet/use-wallet";
 import { type ActionState, hasBacklog } from "./actions";
 import { BarHall, type HallMessage, hallPrimary, shortLast } from "./bar/bar-hall";
 import { BarLoading } from "./bar/bar-loading";
-import { BarScene } from "./bar/bar-scene";
+import { BarScene, claimInBar } from "./bar/bar-scene";
 import { type BarSettings, useBarSettings } from "./bar/bar-settings";
-import { barDay, barMode } from "./bar/events";
+import { barDay, barMode, initialPot, jarLevel } from "./bar/events";
+import { claimError, claimedAmount, claimedLine, MOMENT_LINES } from "./bar/lines";
 import { type EntryStep, entryStep } from "./street/entry";
 import { Gate } from "./street/gate";
 import { createGameQueryClient, type GameData, useGame } from "./use-game";
@@ -119,6 +120,32 @@ function Game({ network, contractId, rpcUrl }: Props) {
     }
   }
 
+  /** Claim from the tab plays in the bar: the bartender opens the till, then hands over the coins or explains. */
+  function claim(call: NonNullable<ActionState["call"]>) {
+    const expected = data?.account?.member?.pendingClaimable ?? 0n;
+    const pick = (lines: readonly string[]) => lines[(Math.random() * lines.length) | 0] ?? "";
+    setBusy("Claim");
+    setMessage(undefined);
+    claimInBar({ state: "pending", line: pick(MOMENT_LINES.claiming) });
+    wallet
+      .callContract(contractId, call)
+      .then(
+        (result) => {
+          const amount = shortLast(claimedAmount(result, expected));
+          claimInBar({ state: "paid", line: claimedLine(amount, pick) });
+          setMessage({ text: `Claimed ${amount} LAST.`, tone: "info" });
+        },
+        (cause) => {
+          claimInBar({ state: "failed", line: claimError(cause) });
+          setMessage({ text: `Claim failed: ${describeContractError(cause)}`, tone: "error" });
+        }
+      )
+      .finally(() => {
+        setBusy(undefined);
+        refresh();
+      });
+  }
+
   function send(label: string, call: ActionState["call"], describe?: (result: unknown) => string) {
     if (!call) return;
     void execute(label, () => wallet.callContract(contractId, call), describe);
@@ -175,7 +202,7 @@ function Game({ network, contractId, rpcUrl }: Props) {
         }
         keys={<NoAdminKey network={network} contractId={contractId} rpcUrl={rpcUrl} />}
         settings={settings}
-        onSend={(label, call) => send(label, call)}
+        onSend={(label, call) => (call?.methodName === "claim" ? claim(call) : send(label, call))}
         onEnableQuick={() => void execute("Enable one-tap check-in", quick.enable)}
         onDisconnect={() => wallet.disconnect()}
         street={streetLayout}
@@ -224,6 +251,7 @@ function Bar({
   const goal = data.openDay.stale || data.openDay.isIdle ? "-" : String(data.openDay.goal);
   const stake = shortLast(config.joinStake);
   const board = useMemo(() => ({ goal, stake: `${stake} LAST` }), [goal, stake]);
+  const jar = jarLevel(state.pot, initialPot(config.initialSupply, config.potBps));
   return (
     <BarScene
       day={day}
@@ -241,6 +269,8 @@ function Bar({
       place={member ? "bar" : "street"}
       board={board}
       onEntered={onEntered}
+      history={data.history}
+      jar={jar}
     />
   );
 }

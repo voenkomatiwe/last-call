@@ -229,8 +229,8 @@ export function drawPlaque(ctx: Ctx, x: number, y: number, w: number, name: stri
   ctx.restore();
 }
 
-/** The pot as a jar of coins on the counter, labelled. */
-export function drawJar(ctx: Ctx, x: number, base: number, h: number, font: string) {
+/** The pot as a jar of coins on the counter, labelled; `level` (0..1) is how full it is (LC-025). */
+export function drawJar(ctx: Ctx, x: number, base: number, h: number, font: string, level = 1) {
   const w = h * 0.7;
   ctx.save();
   ctx.lineWidth = Math.max(1.3, h * 0.03);
@@ -240,9 +240,10 @@ export function drawJar(ctx: Ctx, x: number, base: number, h: number, font: stri
   ctx.roundRect(x - w / 2, base - h, w, h, w * 0.18);
   ctx.fill();
   ctx.fillStyle = "#e0a530";
-  for (let i = 0; i < 14; i++) {
+  const coins = level > 0 ? Math.max(1, Math.round(level * 24)) : 0;
+  for (let i = 0; i < coins; i++) {
     const cx = x - w * 0.36 + ((i * 37) % 9) * (w * 0.09);
-    const cy = base - h * 0.08 - Math.floor(i / 4) * h * 0.11;
+    const cy = base - h * 0.08 - Math.floor(i / 4) * h * 0.125;
     ctx.beginPath();
     ctx.ellipse(cx, cy, w * 0.13, h * 0.045, 0, 0, 7);
     ctx.fill();

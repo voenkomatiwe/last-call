@@ -1,4 +1,4 @@
-import type { JsonRpcProvider } from "near-api-js";
+import type { Provider } from "near-api-js";
 
 export interface AccessKeySummary {
   readonly total: number;
@@ -21,6 +21,6 @@ export function summarizeAccessKeys(value: unknown): AccessKeySummary {
   return { total: keys.length, fullAccess };
 }
 
-export async function accessKeySummary(provider: JsonRpcProvider, accountId: string): Promise<AccessKeySummary> {
+export async function accessKeySummary(provider: Provider, accountId: string): Promise<AccessKeySummary> {
   return summarizeAccessKeys(await provider.viewAccessKeyList({ accountId }));
 }

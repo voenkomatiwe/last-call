@@ -5,12 +5,20 @@ export type NearNetwork = "testnet" | "mainnet";
 export interface NearConfig {
   readonly network: NearNetwork;
   readonly contractId: string;
+  /** One RPC endpoint, or several separated by commas, tried in order (`createViewProvider`). */
   readonly rpcUrl: string;
 }
 
-// FastNEAR endpoints from plan section 6.2. `rpc.testnet.near.org` is deprecated and rate limited.
-const DEFAULT_RPC_URLS: Record<NearNetwork, string> = {
-  testnet: "https://test.rpc.fastnear.com",
+// FastNEAR first (plan section 6.2), then the other public testnet endpoints listed in the official
+// provider table (docs.near.org/api/rpc/providers, read 14 Nov 2026): dRPC, Intear, ZAN. A rate limit
+// on one moves reads to the next. `rpc.testnet.near.org` is deprecated and severely rate limited.
+export const DEFAULT_RPC_URLS: Record<NearNetwork, string> = {
+  testnet: [
+    "https://test.rpc.fastnear.com",
+    "https://near-testnet.drpc.org",
+    "https://testnet-rpc.intea.rs",
+    "https://api.zan.top/near-testnet",
+  ].join(","),
   mainnet: "https://free.rpc.fastnear.com",
 };
 
@@ -18,6 +26,16 @@ export interface NearConfigEnv {
   readonly NEXT_PUBLIC_NEAR_NETWORK?: string | undefined;
   readonly NEXT_PUBLIC_CONTRACT_ID?: string | undefined;
   readonly NEXT_PUBLIC_NEAR_RPC_URL?: string | undefined;
+}
+
+/** A comma-separated list of endpoints; each must pass `parseRpcUrl`. */
+function parseRpcUrls(value: string): string {
+  const urls = value
+    .split(",")
+    .map((url) => url.trim())
+    .filter((url) => url !== "");
+  if (urls.length === 0) throw new Error("NEXT_PUBLIC_NEAR_RPC_URL is empty");
+  return urls.map(parseRpcUrl).join(",");
 }
 
 function parseRpcUrl(value: string): string {
@@ -57,7 +75,7 @@ export function loadNearConfig(env: NearConfigEnv): NearConfig {
     );
   }
 
-  const rpcUrl = env.NEXT_PUBLIC_NEAR_RPC_URL ? parseRpcUrl(env.NEXT_PUBLIC_NEAR_RPC_URL) : DEFAULT_RPC_URLS[network];
+  const rpcUrl = env.NEXT_PUBLIC_NEAR_RPC_URL ? parseRpcUrls(env.NEXT_PUBLIC_NEAR_RPC_URL) : DEFAULT_RPC_URLS[network];
   return { network, contractId, rpcUrl };
 }
 

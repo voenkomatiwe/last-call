@@ -8,9 +8,13 @@ const INK = "#140812";
 const GOLD = "#ffd36b";
 const NEON = "#ff4fb8";
 
-/** `kai.testnet` → `kai.testnet`; long names keep the start and the end. */
+/**
+ * A name that fits a tag and still tells accounts apart: the network suffix goes, and a long name
+ * keeps its end, where generated names differ (`lastcall-bot-gfeaq-1.testnet` → `…bot-gfeaq-1`).
+ */
 export function shortName(name: string, max = 14): string {
-  return name.length <= max ? name : `${name.slice(0, max - 5)}…${name.slice(-4)}`;
+  const bare = name.replace(/\.(testnet|near)$/, "");
+  return bare.length <= max ? bare : `…${bare.slice(-(max - 1))}`;
 }
 
 /** Neon outline over a glass path already set on `ctx`. */
@@ -25,12 +29,24 @@ export function strokeNeon(ctx: Ctx, lw: number, t: number, colour = NEON) {
 }
 
 /** A small neon name tag on the counter: "closer" in front of a patron, or "HERO". */
-export function drawTag(ctx: Ctx, x: number, y: number, text: string, size: number, font: string, colour = NEON) {
+export function drawTag(
+  ctx: Ctx,
+  cx: number,
+  y: number,
+  text: string,
+  size: number,
+  font: string,
+  colour = NEON,
+  /** Width of the scene: a tag near the edge slides in instead of being cut off. */
+  width = Number.POSITIVE_INFINITY
+) {
   ctx.save();
   ctx.font = `800 ${Math.round(size)}px ${font}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const w = ctx.measureText(text).width + size * 1.1;
+  const pad = 4;
+  const x = width === Number.POSITIVE_INFINITY ? cx : Math.min(Math.max(cx, w / 2 + pad), width - w / 2 - pad);
   const h = size * 1.6;
   ctx.fillStyle = "rgba(20,8,18,0.82)";
   ctx.strokeStyle = colour;

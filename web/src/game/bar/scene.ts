@@ -1254,7 +1254,8 @@ export function createBarScene(options: SceneOptions): BarScene {
     const size = Math.max(9, cw * 0.026);
     patrons.forEach((p, i) => {
       const name = closerSeats[i];
-      if (name && !(spot.k > 0 && spot.landed)) drawTag(ctx, p.x * cw, ch * TAG_Y, shortName(name, 12), size, F_MONO);
+      if (name && !(spot.k > 0 && spot.landed))
+        drawTag(ctx, p.x * cw, ch * TAG_Y, shortName(name, 12), size, F_MONO, undefined, cw);
     });
     if (spot.k > 0) {
       drawSpotlight(ctx, spot.x, ch * BAR, cw * 0.11, ch, spot.k);
@@ -1266,7 +1267,8 @@ export function createBarScene(options: SceneOptions): BarScene {
           spot.landed ? `HERO ${shortName(spot.name, 12)}` : shortName(spot.name, 12),
           size * (spot.landed ? 1.15 : 1),
           F_MONO,
-          spot.landed ? "#ffd36b" : "#ff4fb8"
+          spot.landed ? "#ffd36b" : "#ff4fb8",
+          cw
         );
     }
     const scale = ch * 0.25;

@@ -1,4 +1,4 @@
-import type { JsonRpcProvider } from "near-api-js";
+import type { Provider } from "near-api-js";
 
 import { callView } from "../near/view";
 import { ContractShapeError } from "./decode";
@@ -25,7 +25,7 @@ import {
 /** Typed view calls of one deployed contract. Every result is validated before it is returned. */
 export class ContractReader {
   constructor(
-    private readonly provider: JsonRpcProvider,
+    private readonly provider: Provider,
     readonly contractId: string
   ) {}
 

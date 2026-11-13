@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from "near-api-js";
+import { FailoverRpcError, FailoverRpcProvider, JsonRpcProvider, type Provider } from "near-api-js";
 
 // Contract view calls go through near-api-js. Its typed errors cover the structural failures:
 // `AccountDoesNotExistError`, `ContractCodeDoesNotExistError`, and `ContractMethodNotFoundError`
@@ -19,8 +19,33 @@ export class ViewTimeoutError extends Error {
   override readonly name = "ViewTimeoutError";
 }
 
-export function createViewProvider(rpcUrl: string): JsonRpcProvider {
-  return new JsonRpcProvider({ url: rpcUrl }, RETRY_OPTIONS);
+/** `rpcUrl` may list several endpoints separated by commas (`near-config.ts`), tried in order. */
+export function rpcUrlList(rpcUrl: string): string[] {
+  return rpcUrl
+    .split(",")
+    .map((url) => url.trim())
+    .filter((url) => url !== "");
+}
+
+/**
+ * One endpoint gives a plain JSON-RPC provider; several give near-api-js's `FailoverRpcProvider`,
+ * which moves to the next endpoint when a request fails (a rate limit, an outage), so one busy public
+ * RPC does not stall the page.
+ */
+export function createViewProvider(rpcUrl: string): Provider {
+  const providers = rpcUrlList(rpcUrl).map((url) => new JsonRpcProvider({ url }, RETRY_OPTIONS));
+  const [first] = providers;
+  if (!first) throw new Error("No RPC endpoint configured");
+  return providers.length === 1 ? first : new FailoverRpcProvider(providers);
+}
+
+/**
+ * `FailoverRpcProvider` wraps every endpoint's failure in one `FailoverRpcError`. A contract panic
+ * fails the same on every endpoint, so return the failure that carries one, else the last.
+ */
+export function unwrapFailover(error: unknown): unknown {
+  if (!(error instanceof FailoverRpcError)) return error;
+  return error.errors.find((e) => contractPanic(e) !== undefined) ?? error.errors.at(-1) ?? error;
 }
 
 export interface ViewCall {
@@ -36,7 +61,7 @@ export interface ViewCall {
  * shape before using it. Integers above 2^53 lose precision in JSON parsing, so the contract must
  * return such values as strings. Reads use near-api-js's default `optimistic` finality.
  */
-export async function callView(provider: JsonRpcProvider, call: ViewCall): Promise<unknown> {
+export async function callView(provider: Provider, call: ViewCall): Promise<unknown> {
   const timeoutMs = call.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -52,6 +77,8 @@ export async function callView(provider: JsonRpcProvider, call: ViewCall): Promi
       provider.callFunction({ contractId: call.contractId, method: call.method, args: call.args ?? {} }),
       timeout,
     ]);
+  } catch (error) {
+    throw unwrapFailover(error);
   } finally {
     clearTimeout(timer);
   }
@@ -116,7 +143,7 @@ export function contractPanic(error: unknown): ContractPanic | undefined {
 
 /** `callView` bound to one contract: `(method, args) => raw JSON`, not yet validated. */
 export function contractView(
-  provider: JsonRpcProvider,
+  provider: Provider,
   contractId: string
 ): (method: string, args?: Record<string, unknown>) => Promise<unknown> {
   return (method, args = {}) => callView(provider, { contractId, method, args });

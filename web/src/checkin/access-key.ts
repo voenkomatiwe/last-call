@@ -1,7 +1,7 @@
-import type { JsonRpcProvider } from "near-api-js";
+import type { Provider } from "near-api-js";
 import { AccessKeyNotEnoughAllowanceActionError } from "near-api-js/rpc-errors";
-
 import type { ContractCall } from "../contract/calls";
+import { unwrapFailover } from "../near/view";
 
 // The member's own function-call access key for one-tap check-ins (plan decision
 // "12.11 (поздно ночью)"): limited to the Last Call contract and `check_in`, so it cannot move funds
@@ -101,7 +101,7 @@ export function keyStatusFromView(view: unknown, contractId: string): KeyStatus 
 }
 
 export async function checkinKeyStatus(
-  provider: JsonRpcProvider,
+  provider: Provider,
   accountId: string,
   publicKey: string,
   contractId: string
@@ -110,7 +110,9 @@ export async function checkinKeyStatus(
     return keyStatusFromView(await provider.viewAccessKey({ accountId, publicKey }), contractId);
   } catch (error) {
     // The RPC reports a key that is not on the account as an error.
-    if (/does not exist|AccessKeyDoesNotExist|UNKNOWN_ACCESS_KEY/i.test(String(error))) return "missing";
-    throw error;
+    // Behind several endpoints the failure comes wrapped: every endpoint reports the same missing key.
+    const cause = unwrapFailover(error);
+    if (/does not exist|AccessKeyDoesNotExist|UNKNOWN_ACCESS_KEY/i.test(String(cause))) return "missing";
+    throw cause;
   }
 }

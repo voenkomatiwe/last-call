@@ -2,12 +2,24 @@ import { expect, test } from "bun:test";
 
 import { loadNearConfig } from "./near-config";
 
-test("defaults to testnet and its FastNEAR endpoint", () => {
+test("defaults to testnet and its public endpoints, FastNEAR first", () => {
   expect(loadNearConfig({ NEXT_PUBLIC_CONTRACT_ID: "lastcall.testnet" })).toEqual({
     network: "testnet",
     contractId: "lastcall.testnet",
-    rpcUrl: "https://test.rpc.fastnear.com",
+    rpcUrl:
+      "https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs,https://api.zan.top/near-testnet",
   });
+});
+
+test("accepts several endpoints separated by commas and checks each", () => {
+  const env = { NEXT_PUBLIC_CONTRACT_ID: "lastcall.testnet" };
+  expect(loadNearConfig({ ...env, NEXT_PUBLIC_NEAR_RPC_URL: "https://a.example, https://b.example/x" }).rpcUrl).toBe(
+    "https://a.example/,https://b.example/x"
+  );
+  expect(() => loadNearConfig({ ...env, NEXT_PUBLIC_NEAR_RPC_URL: "https://a.example,http://b.example" })).toThrow(
+    "must use https"
+  );
+  expect(() => loadNearConfig({ ...env, NEXT_PUBLIC_NEAR_RPC_URL: " , " })).toThrow("empty");
 });
 
 test("uses the mainnet endpoint for mainnet", () => {

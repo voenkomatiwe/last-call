@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 
-import { callView, contractPanic, createViewProvider, ViewTimeoutError } from "./view";
+import { FailoverRpcError, FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
+
+import { callView, contractPanic, createViewProvider, rpcUrlList, unwrapFailover, ViewTimeoutError } from "./view";
 
 // Panic texts are in the form nearcore sends them: a Rust debug string inside
 // `GuestPanic { panic_msg: "..." }`. `String.raw` keeps the backslashes exactly as on the wire.
@@ -103,5 +105,24 @@ describe("callView against a local server", () => {
       callView(provider, { contractId: "lastcall.testnet", method: "get_state", timeoutMs: 300 })
     ).rejects.toBeInstanceOf(ViewTimeoutError);
     expect(performance.now() - started).toBeLessThan(2_000);
+  });
+});
+
+describe("several RPC endpoints", () => {
+  test("a list gives a failover provider, one URL a plain one", () => {
+    expect(rpcUrlList(" https://a.example , ,https://b.example")).toEqual(["https://a.example", "https://b.example"]);
+    expect(createViewProvider("https://a.example,https://b.example")).toBeInstanceOf(FailoverRpcProvider);
+    expect(createViewProvider("https://a.example")).toBeInstanceOf(JsonRpcProvider);
+    expect(() => createViewProvider(" , ")).toThrow("No RPC endpoint");
+  });
+
+  test("a wrapped failure gives back the contract panic, else the last endpoint's error", () => {
+    const panic = new Error(String.raw`wasm execution failed: GuestPanic { panic_msg: "ERR_NOT_MEMBER" }`);
+    const limit = new Error("Rate limits exceeded");
+    expect(unwrapFailover(new FailoverRpcError(2, [limit, panic]))).toBe(panic);
+    expect(unwrapFailover(new FailoverRpcError(2, [panic, limit]))).toBe(panic);
+    const last = new Error("timeout");
+    expect(unwrapFailover(new FailoverRpcError(2, [limit, last]))).toBe(last);
+    expect(unwrapFailover(limit)).toBe(limit);
   });
 });

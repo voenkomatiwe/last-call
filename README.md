@@ -9,6 +9,13 @@ contract mints nothing after launch, and once its last access key is deleted (se
 Built for NEAR HACKATHON 2026, memecoins track. All code was written during the hackathon (first
 commit 7 November 2026, 22:26 UTC).
 
+| | |
+|---|---|
+| Live app (testnet) | https://last-call-lemon-rho.vercel.app/ : the bar on the live contract, no install |
+| Contract | [`v1.last-call.testnet`](https://testnet.nearblocks.io/address/v1.last-call.testnet), 10-minute days |
+| Full local demo | `bun install && bun run demo`: a sandbox with nine players, keys deleted, six days played (about 40 s) |
+| Repository | https://github.com/voenkomatiwe/last-call |
+
 ## Rules
 
 1. Half of the fixed supply (10⁹ LAST) is locked in the contract as the **pot**. Nobody controls it.
@@ -46,6 +53,11 @@ Parameters (`config/params.json`; the live contract returns them from `get_confi
 The full interface, formulas, events and errors are in [`contract/API.md`](contract/API.md).
 
 ## Try it
+
+Fastest look, no install: open https://last-call-lemon-rho.vercel.app/ → the bar shows the live
+testnet day (goal, check-ins, pot, streak, history), read from `v1.last-call.testnet`. Playing there
+needs a NEAR testnet wallet and LAST (see step 6); the local demo below is the full path without
+either.
 
 Requirements: [Bun](https://bun.sh) 1.4.4. For the contract tests, Rust via `rustup` (the toolchain
 is pinned in `contract/rust-toolchain.toml`).
@@ -136,8 +148,8 @@ Full simulation results: `bun run sim`, then `out/sim-report.md`.
 - Its `code_hash` (`mNpGAXTdohEQCvtHBxVhzUhKjbDhewkQpn3pM3qcgWh`) is the base58 form of the sha256
   in `contract/res/last_call.wasm.sha256`, so the deployed code is the committed wasm. The wasm is
   built reproducibly with `cargo near build reproducible-wasm` (image in `contract/Cargo.toml`).
-- As of 13 November 2026 the testnet account still holds one full-access key; it will be deleted
-  before submission, after which `list-keys` returns nothing. Until then the "no keys" claims above
+- As of 14 November 2026, 11:00 UTC, the testnet account still holds one full-access key; it will
+  be deleted before submission, after which `list-keys` returns nothing. Until then the "no keys" claims above
   describe the launch state, not the current one: check with
   `near account list-keys v1.last-call.testnet network-config testnet now`.
 
@@ -147,7 +159,8 @@ Full simulation results: `bun run sim`, then `out/sim-report.md`.
   tests, committed wasm in `contract/res/`.
 - `sim/`: TypeScript simulation of the day logic and the scenarios (`bun run sim`).
 - `scripts/`: the sandbox demo (`bun run demo`) and sandbox helpers.
-- `web/`: Next.js app and its server routes (game views, optional relayer).
+- `web/`: Next.js app and its server routes (game views, optional relayer); deployed at
+  https://last-call-lemon-rho.vercel.app/.
 - `config/params.json`: the mainnet, testnet and demo parameter sets.
 
 ## Libraries and AI use
@@ -173,8 +186,8 @@ Full simulation results: `bun run sim`, then `out/sim-report.md`.
 
 ## Team and post
 
-- Team: to be filled in before submission.
-- X post with the video: pending; the link is added here once it is published.
+- Team: @voenkomatiwe, @ProstoSergei. Neither member has another project in NEAR HACKATHON 2026.
+- X post with the video: https://x.com/spl_squoosher/status/2121569654455804129
 
 ## License
 

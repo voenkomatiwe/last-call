@@ -21,7 +21,7 @@ test("an invalid contract ID names the variable", () => {
 });
 
 test("a valid contract ID renders the game screen", () => {
-  process.env.NEXT_PUBLIC_CONTRACT_ID = "v1.last-call.testnet";
+  process.env.NEXT_PUBLIC_CONTRACT_ID = "v2.last-call.testnet";
   const html = renderToStaticMarkup(HomePage());
   expect(html).not.toContain('role="alert"');
   expect(html).toContain("Loading");

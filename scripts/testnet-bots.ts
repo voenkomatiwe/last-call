@@ -16,7 +16,7 @@ import { formatLast, formatNear } from "../web/src/game/format";
 import { DEFAULT_RPC_URLS } from "../web/src/near/near-config";
 import { createViewProvider } from "../web/src/near/view";
 
-// Testnet bots (LC-030): a few accounts that play `v1.last-call.testnet` next to the user's wallet,
+// Testnet bots (LC-030): a few accounts that play `v2.last-call.testnet` next to the user's wallet,
 // so real days have a goal, closers, a hero and rewards. Keys live only in the gitignored root `.env`
 // (Bun loads it); this script never prints them and never passes them on a command line.
 //
@@ -31,7 +31,7 @@ import { createViewProvider } from "../web/src/near/view";
 
 const ROOT = join(import.meta.dir, "..");
 const ENV_FILE = join(ROOT, ".env");
-const CONTRACT_ID = process.env.LC_CONTRACT_ID ?? "v1.last-call.testnet";
+const CONTRACT_ID = process.env.LC_CONTRACT_ID ?? "v2.last-call.testnet";
 /** Several public testnet RPCs, tried in order (`DEFAULT_RPC_URLS`); `LC_TESTNET_RPC` overrides, comma-separated. */
 const RPC_URL = process.env.LC_TESTNET_RPC ?? DEFAULT_RPC_URLS.testnet;
 

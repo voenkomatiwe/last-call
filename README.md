@@ -12,7 +12,8 @@ commit 7 November 2026, 22:26 UTC).
 | | |
 |---|---|
 | Live app (testnet) | https://last-call-lemon-rho.vercel.app/ : the bar on the live contract, no install |
-| Contract | [`v1.last-call.testnet`](https://testnet.nearblocks.io/address/v1.last-call.testnet), 10-minute days |
+| Contract | [`v2.last-call.testnet`](https://testnet.nearblocks.io/address/v2.last-call.testnet), 10-minute days |
+| Faucet (testnet) | https://last-call-lemon-rho.vercel.app/faucet : 300 000 LAST once per account, enough to join |
 | Full local demo | `bun install && bun run demo`: a sandbox with nine players, keys deleted, six days played (about 40 s) |
 | Repository | https://github.com/voenkomatiwe/last-call |
 
@@ -46,7 +47,7 @@ Parameters (`config/params.json`; the live contract returns them from `get_confi
 | `burn_bps` | 500 | 500 | Pot burnt on a failed day |
 | `slash_bps` | 1000 | 1000 | Stake burnt per missed failed day; also the exit fee |
 | `join_stake` | 100 000 LAST | 1 000 LAST | Stake locked by `join` |
-| `faucet_amount` | 0 (off) | 5 000 LAST | One-time faucet |
+| `faucet_amount` | 300 000 LAST (v2) | 5 000 LAST | One-time faucet, once per account |
 | `inactive_days` | 6 | 3 | Missed days after which anyone may kick |
 | `kick_bounty_bps` | 2000 | 2000 | Share of the kicked member's fee paid to the kicker |
 
@@ -55,9 +56,11 @@ The full interface, formulas, events and errors are in [`contract/API.md`](contr
 ## Try it
 
 Fastest look, no install: open https://last-call-lemon-rho.vercel.app/ → the bar shows the live
-testnet day (goal, check-ins, pot, streak, history), read from `v1.last-call.testnet`. Playing there
-needs a NEAR testnet wallet and LAST (see step 6); the local demo below is the full path without
-either.
+testnet day (goal, check-ins, pot, streak, history), read from `v2.last-call.testnet`. Playing there
+needs a NEAR testnet wallet with a little testnet NEAR; LAST comes from the
+[faucet](https://last-call-lemon-rho.vercel.app/faucet). A new player goes: `storage_deposit`
+(0.00125 NEAR) → `faucet()` (300 000 LAST, once per account) → `join` with 0.01 NEAR attached. The
+local demo below is the full path without a wallet.
 
 Requirements: [Bun](https://bun.sh) 1.4.4. For the contract tests, Rust via `rustup` (the toolchain
 is pinned in `contract/rust-toolchain.toml`).
@@ -76,14 +79,15 @@ is pinned in `contract/rust-toolchain.toml`).
    integration tests on the real wasm in a sandbox (`contract/tests/sandbox.rs`) are opt-in and
    slow; the command to run them is at the top of that file.
 5. Check the live testnet contract with [near-cli-rs](https://github.com/near/near-cli-rs):
-   `near account list-keys v1.last-call.testnet network-config testnet now` lists the contract's
+   `near account list-keys v2.last-call.testnet network-config testnet now` lists the contract's
    access keys (see [Deployment](#deployment)).
 6. The web app: `cp web/.env.example web/.env.local`, set
-   `NEXT_PUBLIC_CONTRACT_ID=v1.last-call.testnet`, run `bun run dev` and open
+   `NEXT_PUBLIC_CONTRACT_ID=v2.last-call.testnet`, run `bun run dev` and open
    http://localhost:3000 → the live state of the testnet game (day, goal, check-ins, pot, history).
    Connect a NEAR testnet wallet to play: register, join, and check in with the gesture (lift the
-   glass and hold until it is empty). The testnet faucet is off, so joining needs 100 000 LAST from
-   another holder; the sandbox demo is the full path without that.
+   glass and hold until it is empty). LAST for the stake comes from
+   http://localhost:3000/faucet: register (`storage_deposit`, 0.00125 NEAR), claim once
+   (`faucet()`, 300 000 LAST), then join in the bar with 0.01 NEAR attached.
 
 `bun run check` runs Biome, type checking and the TypeScript tests.
 
@@ -91,7 +95,7 @@ is pinned in `contract/rust-toolchain.toml`).
 
 | What | Status |
 |---|---|
-| NEP-141 token with the game in one contract | Real: testnet `v1.last-call.testnet`; local sandbox in `bun run demo` |
+| NEP-141 token with the game in one contract | Real: testnet `v2.last-call.testnet`; local sandbox in `bun run demo` |
 | Check-ins, closers, hero draw, burns, slashes, kicks, claims | Real, in the contract |
 | Contract without access keys | Real in the demo sandbox; testnet: see [Deployment](#deployment) |
 | 60 days, 110–180 accounts, farmers, snipers, griefers | Simulation (`sim/engine.ts`: the contract's formulas ported to TypeScript and reviewed against the Rust source; no automated trace comparison with the wasm yet) |
@@ -144,14 +148,17 @@ Full simulation results: `bun run sim`, then `out/sim-report.md`.
 
 ## Deployment
 
-- Testnet contract: `v1.last-call.testnet`, 600-second days.
+- Testnet contract: `v2.last-call.testnet`, 600-second days, deployed with the testnet set plus a
+  faucet: `faucet_bps` 1000 (10^8 LAST reserved), `faucet_amount` 300 000 LAST, about 333 claims.
+  The faucet pays each account once; it does not stop farming, because new testnet accounts are
+  free. `v1.last-call.testnet` (faucet off) is the earlier deployment of the same wasm.
 - Its `code_hash` (`mNpGAXTdohEQCvtHBxVhzUhKjbDhewkQpn3pM3qcgWh`) is the base58 form of the sha256
   in `contract/res/last_call.wasm.sha256`, so the deployed code is the committed wasm. The wasm is
   built reproducibly with `cargo near build reproducible-wasm` (image in `contract/Cargo.toml`).
 - As of 14 November 2026, 11:00 UTC, the testnet account still holds one full-access key; it will
   be deleted before submission, after which `list-keys` returns nothing. Until then the "no keys" claims above
   describe the launch state, not the current one: check with
-  `near account list-keys v1.last-call.testnet network-config testnet now`.
+  `near account list-keys v2.last-call.testnet network-config testnet now`.
 
 ## Repository
 

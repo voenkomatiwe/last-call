@@ -173,11 +173,11 @@ describe("readShared", () => {
 describe("parseSharedResponse", () => {
   async function body() {
     const { view } = fakeContract();
-    return { contractId: "v1.last-call.testnet", ageMs: 250, views: await readShared(view, undefined, () => 5) };
+    return { contractId: "v2.last-call.testnet", ageMs: 250, views: await readShared(view, undefined, () => 5) };
   }
 
   test("accepts a server answer for the expected contract", async () => {
-    const parsed = parseSharedResponse(JSON.parse(JSON.stringify(await body())), "v1.last-call.testnet");
+    const parsed = parseSharedResponse(JSON.parse(JSON.stringify(await body())), "v2.last-call.testnet");
     expect(parsed.ageMs).toBe(250);
     expect(parseShared(parsed.views).openDay.count).toBe(2);
   });
@@ -186,17 +186,17 @@ describe("parseSharedResponse", () => {
     const good = await body();
     expect(() => parseSharedResponse(good, "other.testnet")).toThrow(ContractShapeError);
     expect(() =>
-      parseSharedResponse({ ...good, views: { ...good.views, state: { today: 1 } } }, "v1.last-call.testnet")
+      parseSharedResponse({ ...good, views: { ...good.views, state: { today: 1 } } }, "v2.last-call.testnet")
     ).toThrow(ContractShapeError);
     expect(() =>
-      parseSharedResponse({ ...good, views: { ...good.views, kickable: ["Not An Account"] } }, "v1.last-call.testnet")
+      parseSharedResponse({ ...good, views: { ...good.views, kickable: ["Not An Account"] } }, "v2.last-call.testnet")
     ).toThrow(ContractShapeError);
-    expect(() => parseSharedResponse({ ...good, ageMs: -1 }, "v1.last-call.testnet")).toThrow(ContractShapeError);
+    expect(() => parseSharedResponse({ ...good, ageMs: -1 }, "v2.last-call.testnet")).toThrow(ContractShapeError);
   });
 });
 
 describe("GET /api/game handler", () => {
-  const CONTRACT = "v1.last-call.testnet";
+  const CONTRACT = "v2.last-call.testnet";
 
   test("concurrent requests share one RPC read and a fresh read is reused for 2 s", async () => {
     const { view, calls } = fakeContract();

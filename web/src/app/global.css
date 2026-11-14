@@ -50,3 +50,30 @@ main.lc-config {
   background: #ffffff0d;
   border: 1px solid #ff4fb855;
 }
+
+/* The faucet page (LC-031): neutral, functional. */
+.lc-faucet dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+}
+.lc-faucet dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.lc-faucet a {
+  color: #ffb3e0;
+}
+.lc-faucet button {
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px solid #ff4fb8;
+  background: #ff4fb822;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.lc-faucet button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -27,6 +27,7 @@ import { createViewProvider } from "../web/src/near/view";
 //   bun scripts/testnet-bots.ts check-in 3   the first N bots that can check in today do it
 //   bun scripts/testnet-bots.ts settle       settle finished days (and draw heroes)
 //   bun scripts/testnet-bots.ts claim        bots with rewards claim them
+//   bun scripts/testnet-bots.ts fund <account> [LAST]   one bot sends LAST (default: the join stake)
 
 const ROOT = join(import.meta.dir, "..");
 const ENV_FILE = join(ROOT, ".env");
@@ -187,7 +188,31 @@ async function claim(): Promise<void> {
   }
 }
 
-const [command, arg] = process.argv.slice(2);
+/** One bot with enough spare LAST sends `amount` (whole LAST, default the join stake) to `receiver`. */
+async function fund(receiver: string | undefined, amountArg: string | undefined): Promise<void> {
+  if (!receiver || !/^[a-z0-9._-]+\.testnet$/.test(receiver)) throw new Error("usage: fund <account>.testnet [LAST]");
+  const config = await reader.config();
+  const amount = amountArg ? BigInt(amountArg) * 10n ** 18n : config.joinStake;
+  if (amount <= 0n) throw new Error("The amount must be positive");
+  if (!(await reader.storageBalance(receiver))) {
+    throw new Error(`${receiver} is not registered for the token: storage_deposit first (the site does it on Join)`);
+  }
+  for (const bot of loadBots()) {
+    const balance = await reader.balance(bot.accountId).catch(() => 0n);
+    if (balance < amount) continue;
+    await send(bot, {
+      methodName: "ft_transfer",
+      args: { receiver_id: receiver, amount: amount.toString(), memo: "testnet-bots fund" },
+      gas: "30000000000000",
+      deposit: "1",
+    });
+    console.log(`✓ ${bot.accountId} sent ${formatLast(amount)} to ${receiver}`);
+    return;
+  }
+  throw new Error(`No bot holds ${formatLast(amount)} spare`);
+}
+
+const [command, arg, arg2] = process.argv.slice(2);
 const count = Number(arg ?? "1");
 switch (command) {
   case "create":
@@ -211,6 +236,11 @@ switch (command) {
   case "claim":
     await claim();
     break;
+  case "fund":
+    await fund(arg, arg2);
+    break;
   default:
-    console.log("usage: bun scripts/testnet-bots.ts create N | status | register | join | check-in N | settle | claim");
+    console.log(
+      "usage: bun scripts/testnet-bots.ts create N | status | register | join | check-in N | settle | claim | fund <account> [LAST]"
+    );
 }

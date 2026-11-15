@@ -228,6 +228,8 @@ export function createBarScene(options: SceneOptions): BarScene {
   let barMode: BarMode = "ready";
   /** The player's check-in landed this day (before the poll says so). */
   let ownDone = false;
+  /** Warm-up members get one practice pint per visit (LC-032); nothing is sent for it. */
+  let practiceDone = false;
   let mode: GlassMode = "idle";
   let held = false;
   let lift = 0;
@@ -1143,7 +1145,7 @@ export function createBarScene(options: SceneOptions): BarScene {
   }
   /** What the bartender says when the player walks in, by what the chain says about them now. */
   function welcomeLine(): string {
-    if (barMode === "warmup") return "Welcome. Warm-up first: your pint is poured soon";
+    if (barMode === "warmup") return "Welcome. Warm-up first: this practice pint is on the house";
     if (barMode === "backlog") return "Welcome back. Settle the old days first, then I pour";
     if (barMode === "done-today" || ownDone) return `Welcome back. You've had tonight's pint. ${nextPintIn()}`;
     return "Welcome back. Your pint is poured: bottoms up";
@@ -1865,7 +1867,7 @@ export function createBarScene(options: SceneOptions): BarScene {
       }
     }
     // lacing: foam rings left on the glass where the beer used to be
-    if (vol < 0.97 && barMode !== "warmup") {
+    if (vol < 0.97 && !(barMode === "warmup" && practiceDone)) {
       ctx.strokeStyle = "rgba(255,248,232,0.5)";
       ctx.lineWidth = Math.max(1.5, g.r * 0.035);
       ctx.lineCap = "round";
@@ -2394,9 +2396,40 @@ export function createBarScene(options: SceneOptions): BarScene {
       options.onFullDrink();
       return;
     }
+    if (barMode === "warmup" && !practiceDone) {
+      practiceDone = true;
+      mode = "wait";
+      practiceFinished();
+      return;
+    }
     // the mode changed mid-drink (warm-up, backlog): nothing is sent, nothing counted
     mode = "wait";
     api.checkInFailed(refuseLine() ?? "Not counted");
+  }
+  /** The practice pint is down (LC-032): lower the glass, nothing sent, the glass stays empty. */
+  function practiceFinished() {
+    mode = "lower";
+    const s = { l: lift };
+    gsap.to(s, {
+      l: 0,
+      duration: reduced ? 0.15 : 0.5,
+      ease: "power2.out",
+      onUpdate: () => {
+        lift = liftTarget = s.l;
+      },
+      onComplete: () => {
+        say(
+          "Practice pint, not counted. That is the move: your real one pours on your activation day",
+          "bartender",
+          "good"
+        );
+        later(() => {
+          mode = "idle";
+          refill();
+          tipText(idleTip());
+        }, 700);
+      },
+    });
   }
   /** The glass lands with a bang after a confirmed check-in; it stays empty until the next day (LC-029). */
   function slam(outcome: CheckInOutcome, lineText: string) {
@@ -2573,14 +2606,15 @@ export function createBarScene(options: SceneOptions): BarScene {
 
   // ---------- input ----------
   function refuseLine(): string | null {
-    if (barMode === "warmup") return "Warm-up: your pint gets poured on your activation day";
+    if (barMode === "warmup" && practiceDone)
+      return "That was practice. Your first real pint pours on your activation day";
     if (barMode === "backlog") return "Settle the old days first, then I pour";
     if (barMode === "done-today" || ownDone) return `One pint a check-in, ser. ${nextPintIn()}`;
     return null;
   }
   /** One pint a check-in (LC-029): the glass at rest is empty in warm-up and after today's check-in. */
   function restingEmpty(): boolean {
-    return barMode === "warmup" || barMode === "done-today" || ownDone;
+    return (barMode === "warmup" && practiceDone) || barMode === "done-today" || ownDone;
   }
   /** Back at rest: refill only when a pint is still due today. */
   function refill() {
@@ -3054,7 +3088,11 @@ export function createBarScene(options: SceneOptions): BarScene {
     tipEl.textContent = text;
   }
   function idleTip(): string {
-    if (barMode === "warmup") return "warm-up: pint pours on your activation day";
+    if (barMode === "warmup") {
+      return practiceDone
+        ? "warm-up: real pint pours on your activation day"
+        : "practice pint: drag it to your mouth and hold · not counted";
+    }
     if (barMode === "backlog") return "settle first, then we pour";
     // the tent card by the glass says it (LC-029)
     if (barMode === "done-today" || ownDone) return "";

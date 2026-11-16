@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { QuickCheckIn } from "../../checkin/use-checkin-key";
@@ -259,6 +260,7 @@ function Hud({
           accountId={accountId}
           balance={data.account?.balance ?? null}
           settings={settings}
+          faucet={data.game.config.faucetAmount > 0n}
           onDisconnect={onDisconnect}
         />
       ) : (
@@ -555,12 +557,15 @@ function AccountMenu({
   accountId,
   balance,
   settings,
+  faucet,
   onDisconnect,
 }: {
   readonly accountId: string;
   /** `ft_balance_of`: LAST in the wallet, not the stake or rewards held by the contract. */
   readonly balance: bigint | null;
   readonly settings: BarSettings;
+  /** The contract's faucet is on (`faucet_amount > 0`): link to the faucet page. */
+  readonly faucet: boolean;
   readonly onDisconnect: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -608,6 +613,13 @@ function AccountMenu({
         <div className="lc-menu-pop" id="lc-menu-pop">
           <Switch icon="volume" label="Sound" on={settings.sound} onChange={settings.setSound} />
           <Switch icon="wind" label="Burps & farts" on={settings.bodySounds} onChange={settings.setBodySounds} />
+          {faucet && (
+            <Link href="/faucet" className="lc-menu-item">
+              <span>
+                <Icon name="bill" /> Get test $LAST (faucet)
+              </span>
+            </Link>
+          )}
           <button
             type="button"
             className="lc-menu-item lc-menu-out"
